@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    padding: 0;
+    margin: 0;
+  }
+  .invoice-paper {
+    width: 800px; /* Simulated A4 width */
+    margin: 20px auto;
+  }
+  .invoice-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid black;
+    table-layout: fixed; /* Crucial for controlling widths */
+  }
+  .invoice-table th, .invoice-table td {
+    padding: 4px;
+    vertical-align: top;
+  }
+  .invoice-table th {
+    border: 1px solid black;
+    font-weight: bold;
+    text-align: center;
+  }
+  .invoice-table td {
+    border-left: 1px solid black;
+    border-right: 1px solid black;
+    border-top: none;
+    border-bottom: none;
+  }
+  .input-field {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: inherit;
+    resize: none; /* No resize handle */
+    overflow: hidden; /* Hide scrollbars in PDF */
+  }
+  /* Column widths */
+  .col-srno { width: 5%; }
+  .col-name { width: 45%; }
+  .col-hsn { width: 8%; }
+  .col-size { width: 8%; }
+  .col-sqft { width: 8%; }
+  .col-qty { width: 6%; }
+  .col-rate { width: 8%; }
+  .col-total { width: 12%; }
+</style>
+</head>
+<body>
+  <div class="invoice-paper">
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th class="col-srno">Sr.No.</th>
+          <th class="col-name">Name of Product / Service</th>
+          <th class="col-hsn">HSN SAC</th>
+          <th class="col-size">Size</th>
+          <th class="col-sqft">TTL.Sq.Ft.</th>
+          <th class="col-qty">Qty</th>
+          <th class="col-rate">Rate</th>
+          <th class="col-total">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Title Row -->
+        <tr>
+          <td></td>
+          <td><textarea class="input-field" rows="1" style="font-weight:bold; text-decoration:underline;">Supply of FL & BL Boards</textarea></td>
+          <td></td><td></td><td></td><td></td><td></td><td></td>
+        </tr>
+        <!-- Item Row -->
+        <tr>
+          <td style="text-align:center">1</td>
+          <td><textarea class="input-field" rows="1">New FL Board with Print</textarea></td>
+          <td style="text-align:center">3919</td>
+          <td style="text-align:center">6'x3'</td>
+          <td style="text-align:right">540</td>
+          <td style="text-align:right">30</td>
+          <td style="text-align:right">41</td>
+          <td style="text-align:right">22140.00</td>
+        </tr>
+        <!-- Long Transportation Row -->
+        <tr>
+          <td></td>
+          <td><textarea class="input-field" rows="2">Transportation Charges from Jabalpur to Sagar Jabalpur and some extra long text to test wrapping</textarea></td>
+          <td></td><td></td><td></td><td></td><td></td>
+          <td style="text-align:right">20375.00</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <script>
+    // Auto-resize textareas based on content
+    document.querySelectorAll('textarea').forEach(el => {
+      el.style.height = 'auto';
+      el.style.height = (el.scrollHeight) + 'px';
+    });
+  </script>
+</body>
+</html>

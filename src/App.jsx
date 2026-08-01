@@ -121,6 +121,8 @@ const AutocompleteTextarea = ({ value, onChange, onSelect, options, ...props }) 
 const DEFAULT_CONFIG = {
   topMargin: 5,
   companyStateCode: '23',
+  companyPan: 'ACHPJ1044Q',
+  companyGst: '23ACHPJ1044Q1ZK',
   bankInfo: {
     bank1Name: 'HDFC Bank A/c No. 99999827066916',
     bank1Branch: 'Gol Bazar Branch, Jabalpur IFSC:- HDFC0000224',
@@ -203,7 +205,7 @@ function App() {
   const [allHistoryForReport, setAllHistoryForReport] = useState([]);
   const HISTORY_LIMIT = 15;
   const [currentView, setCurrentView] = useState('invoice'); // 'invoice' | 'settings' | 'history' | 'gst-report'
-  const [gstTab, setGstTab] = useState('invoice'); // 'invoice' | 'hsn'
+  const [gstTab, setGstTab] = useState('b2b'); // 'b2b' | 'b2c' | 'credit-notes' | 'hsn'
   const [searchQuery, setSearchQuery] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -230,6 +232,8 @@ function App() {
     invoiceNo: '007/2026-2027',
     invoiceDate: '07.04.2026',
     orderNo: '',
+    documentType: 'invoice', // 'invoice' | 'credit-note'
+    referenceInvoiceNo: '',
   });
 
   const [items, setItems] = useState([
@@ -441,6 +445,8 @@ function App() {
       invoiceNo: nextNo,
       invoiceDate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'),
       orderNo: '',
+      documentType: 'invoice',
+      referenceInvoiceNo: '',
     });
     setItems([{ id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: 0, qty: 1, rate: 0 }]);
     setTransportation([]);
@@ -520,6 +526,8 @@ function App() {
       invoiceNo: '',
       invoiceDate: '',
       orderNo: '',
+      documentType: 'invoice',
+      referenceInvoiceNo: '',
       ...cloned.invoiceData
     });
     setItems((cloned.items || []).map(item => ({ ...item, type: item.type || 'item', id: uuidv4() })));
@@ -557,15 +565,33 @@ function App() {
           </div>
 
           <div className="settings-section mt-4">
-            <h3>Company State Code</h3>
-            <p>Your company's GST state code. When a customer's state code differs, IGST will be applied instead of CGST+SGST.</p>
+            <h3>Company Details</h3>
+            <p>Your company's state code, PAN and GSTN details displayed on the invoice.</p>
             <div className="flex-row items-center" style={{marginTop: 10, gap: 10}}>
-              <label>State Code:</label>
+              <label style={{width: 80}}>State Code:</label>
               <input 
                 className="input-field border" 
                 style={{width: 80}}
                 value={config.companyStateCode} 
                 onChange={e => handleConfigChange(null, 'companyStateCode', e.target.value)} 
+              />
+            </div>
+            <div className="flex-row items-center" style={{marginTop: 10, gap: 10}}>
+              <label style={{width: 80}}>PAN No.:</label>
+              <input 
+                className="input-field border" 
+                style={{width: 150}}
+                value={config.companyPan || ''} 
+                onChange={e => handleConfigChange(null, 'companyPan', e.target.value)} 
+              />
+            </div>
+            <div className="flex-row items-center" style={{marginTop: 10, gap: 10}}>
+              <label style={{width: 80}}>GSTN:</label>
+              <input 
+                className="input-field border" 
+                style={{width: 200}}
+                value={config.companyGst || ''} 
+                onChange={e => handleConfigChange(null, 'companyGst', e.target.value)} 
               />
             </div>
           </div>
@@ -607,7 +633,9 @@ function App() {
        return (d.billToName && d.billToName.toLowerCase().includes(search)) ||
               (d.billToAddress && d.billToAddress.toLowerCase().includes(search)) ||
               (d.invoiceDate && d.invoiceDate.includes(search)) ||
-              (d.invoiceNo && d.invoiceNo.toLowerCase().includes(search));
+              (d.invoiceNo && d.invoiceNo.toLowerCase().includes(search)) ||
+              (d.documentType === 'credit-note' && 'credit note'.includes(search)) ||
+              (d.referenceInvoiceNo && d.referenceInvoiceNo.toLowerCase().includes(search));
     });
 
     return (
@@ -633,13 +661,22 @@ function App() {
           </div>
           <div className="history-list mt-4">
              {filtered.length === 0 ? <p className="mt-4">No invoices found.</p> : null}
-             {filtered.map(rec => (
+             {filtered.map(rec => {
+                const isCreditNote = rec.invoiceData?.documentType === 'credit-note';
+                const hasGst = !!(rec.invoiceData?.billToGst?.trim());
+                return (
                 <div key={rec.id} className="history-card border p-4 mb-4 rounded bg-white shadow-sm flex justify-between items-center">
                    <div>
-                      <h3 className="font-bold">{rec.invoiceData.billToName || 'Unnamed Client'}</h3>
+                      <h3 className="font-bold">
+                        {rec.invoiceData.billToName || 'Unnamed Client'}
+                        {isCreditNote && <span className="badge badge-credit-note ml-2">Credit Note</span>}
+                        {!isCreditNote && !hasGst && <span className="badge badge-b2c ml-2">B2C</span>}
+                      </h3>
                       <p className="text-sm text-gray-600">{rec.invoiceData.billToAddress}</p>
                       <p className="text-sm mt-1">
-                        <strong>Inv No:</strong> {rec.invoiceData.invoiceNo} | <strong>Date:</strong> {rec.invoiceData.invoiceDate}
+                        <strong>{isCreditNote ? 'CN No:' : 'Inv No:'}</strong> {rec.invoiceData.invoiceNo} | <strong>Date:</strong> {rec.invoiceData.invoiceDate}
+                        {isCreditNote && rec.invoiceData.referenceInvoiceNo && (
+                          <> | <strong>Ref:</strong> {rec.invoiceData.referenceInvoiceNo}</>)}
                       </p>
                    </div>
                    <div className="text-right flex items-center justify-end gap-4">
@@ -648,7 +685,8 @@ function App() {
                       <button onClick={() => deleteInvoice(rec.id)} className="btn icon-btn text-red p-2 border rounded"><Trash2 size={16}/></button>
                    </div>
                 </div>
-             ))}
+                );
+             })}
           </div>
           {window.electronAPI && historyTotalPages > 1 && (
             <div className="flex justify-between items-center mt-4 p-4 border-t">
@@ -763,6 +801,11 @@ function App() {
     }
     const hsnData = Object.values(hsnTotals);
 
+    // Split records into B2B, B2C, Credit Notes
+    const b2bRecs = filteredRecs.filter(r => r.invoiceData?.documentType !== 'credit-note' && !!(r.invoiceData?.billToGst?.trim()));
+    const b2cRecs = filteredRecs.filter(r => r.invoiceData?.documentType !== 'credit-note' && !(r.invoiceData?.billToGst?.trim()));
+    const cnRecs = filteredRecs.filter(r => r.invoiceData?.documentType === 'credit-note');
+
     const exportToExcel = () => {
       // Summary sheet data
       const summaryData = [
@@ -773,11 +816,10 @@ function App() {
         { Description: 'Grand Total (Sales + Tax)', 'Amount (₹)': parseFloat(grandTotal.toFixed(2)) },
       ];
 
-      // Breakdown sheet data
-      const breakdownData = filteredRecs.map(rec => {
+      const makeBreakdownData = (recs, isCN) => recs.map(rec => {
         const tb = rec.taxBreakdown || {};
-        return {
-          'Inv No.': rec.invoiceData?.invoiceNo || '',
+        const row = {
+          [isCN ? 'CN No.' : 'Inv No.']: rec.invoiceData?.invoiceNo || '',
           'Date': rec.invoiceData?.invoiceDate || '',
           'Client': rec.invoiceData?.billToName || '',
           'GST No.': rec.invoiceData?.billToGst || '',
@@ -787,20 +829,39 @@ function App() {
           'IGST': parseFloat((tb.igst || 0).toFixed(2)),
           'Total': parseFloat((rec.totalAmount || 0).toFixed(2)),
         };
+        if (isCN) {
+          row['Ref Invoice'] = rec.invoiceData?.referenceInvoiceNo || '';
+        }
+        return row;
       });
+
+      const invCols = [
+        { wch: 18 }, { wch: 14 }, { wch: 30 }, { wch: 20 },
+        { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }
+      ];
+      const cnCols = [...invCols, { wch: 18 }];
 
       const wb = XLSX.utils.book_new();
       const wsSummary = XLSX.utils.json_to_sheet(summaryData);
       wsSummary['!cols'] = [{ wch: 35 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, wsSummary, 'GST Summary');
 
-      if (breakdownData.length > 0) {
-        const wsBreakdown = XLSX.utils.json_to_sheet(breakdownData);
-        wsBreakdown['!cols'] = [
-          { wch: 18 }, { wch: 14 }, { wch: 30 }, { wch: 20 },
-          { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }
-        ];
-        XLSX.utils.book_append_sheet(wb, wsBreakdown, 'Invoice Breakdown');
+      if (b2bRecs.length > 0) {
+        const wsB2B = XLSX.utils.json_to_sheet(makeBreakdownData(b2bRecs, false));
+        wsB2B['!cols'] = invCols;
+        XLSX.utils.book_append_sheet(wb, wsB2B, 'B2B Invoices');
+      }
+
+      if (b2cRecs.length > 0) {
+        const wsB2C = XLSX.utils.json_to_sheet(makeBreakdownData(b2cRecs, false));
+        wsB2C['!cols'] = invCols;
+        XLSX.utils.book_append_sheet(wb, wsB2C, 'B2C Invoices');
+      }
+
+      if (cnRecs.length > 0) {
+        const wsCN = XLSX.utils.json_to_sheet(makeBreakdownData(cnRecs, true));
+        wsCN['!cols'] = cnCols;
+        XLSX.utils.book_append_sheet(wb, wsCN, 'Credit Notes');
       }
 
       if (hsnData.length > 0) {
@@ -897,24 +958,34 @@ function App() {
 
           {filteredRecs.length > 0 && (
             <div className="mt-4">
-              <div className="flex gap-4 mb-4" style={{borderBottom: '1px solid #d1d5db'}}>
+              <div className="gst-tab-bar">
                 <button 
-                  className={`pb-2 ${gstTab === 'invoice' ? 'font-bold border-b-2' : 'text-gray-500'}`} 
-                  style={gstTab === 'invoice' ? {borderColor: '#2563eb', color: '#2563eb'} : {}}
-                  onClick={() => setGstTab('invoice')}
+                  className={gstTab === 'b2b' ? 'active-tab' : ''}
+                  onClick={() => setGstTab('b2b')}
                 >
-                  Invoice Wise
+                  B2B ({b2bRecs.length})
                 </button>
                 <button 
-                  className={`pb-2 ${gstTab === 'hsn' ? 'font-bold border-b-2' : 'text-gray-500'}`} 
-                  style={gstTab === 'hsn' ? {borderColor: '#2563eb', color: '#2563eb'} : {}}
+                  className={gstTab === 'b2c' ? 'active-tab' : ''}
+                  onClick={() => setGstTab('b2c')}
+                >
+                  B2C ({b2cRecs.length})
+                </button>
+                <button 
+                  className={gstTab === 'credit-notes' ? 'active-tab' : ''}
+                  onClick={() => setGstTab('credit-notes')}
+                >
+                  Credit Notes ({cnRecs.length})
+                </button>
+                <button 
+                  className={gstTab === 'hsn' ? 'active-tab' : ''}
                   onClick={() => setGstTab('hsn')}
                 >
                   HSN Code Wise
                 </button>
               </div>
 
-              {gstTab === 'invoice' && (
+              {(gstTab === 'b2b' || gstTab === 'b2c') && (
               <div className="gst-table-wrapper">
                 <table className="gst-report-table gst-breakdown-table">
                   <thead>
@@ -931,7 +1002,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRecs.map(rec => {
+                    {(gstTab === 'b2b' ? b2bRecs : b2cRecs).map(rec => {
                       const tb = rec.taxBreakdown || {};
                       return (
                         <tr key={rec.id}>
@@ -947,6 +1018,52 @@ function App() {
                         </tr>
                       );
                     })}
+                    {(gstTab === 'b2b' ? b2bRecs : b2cRecs).length === 0 && (
+                      <tr><td colSpan={9} className="text-center" style={{padding: 20, color: '#6b7280'}}>No {gstTab === 'b2b' ? 'B2B' : 'B2C'} invoices in this period.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              )}
+
+              {gstTab === 'credit-notes' && (
+              <div className="gst-table-wrapper">
+                <table className="gst-report-table gst-breakdown-table">
+                  <thead>
+                    <tr>
+                      <th style={{width: '10%', minWidth: 90}}>CN No.</th>
+                      <th style={{width: '10%', minWidth: 90}}>Ref Inv.</th>
+                      <th style={{width: '10%', minWidth: 100}}>Date</th>
+                      <th style={{width: '16%', minWidth: 150}}>Client</th>
+                      <th style={{width: '12%', minWidth: 140}}>GST No.</th>
+                      <th className="text-right" style={{width: '10%', minWidth: 80}}>Taxable</th>
+                      <th className="text-right" style={{width: '8%', minWidth: 70}}>CGST</th>
+                      <th className="text-right" style={{width: '8%', minWidth: 70}}>SGST</th>
+                      <th className="text-right" style={{width: '8%', minWidth: 70}}>IGST</th>
+                      <th className="text-right" style={{width: '8%', minWidth: 80}}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cnRecs.map(rec => {
+                      const tb = rec.taxBreakdown || {};
+                      return (
+                        <tr key={rec.id}>
+                          <td>{rec.invoiceData?.invoiceNo}</td>
+                          <td>{rec.invoiceData?.referenceInvoiceNo || '—'}</td>
+                          <td>{rec.invoiceData?.invoiceDate}</td>
+                          <td className="gst-cell-wrap">{rec.invoiceData?.billToName}</td>
+                          <td className="gst-cell-mono">{rec.invoiceData?.billToGst || '—'}</td>
+                          <td className="text-right">{(tb.taxableValue || 0).toFixed(2)}</td>
+                          <td className="text-right">{(tb.cgst || 0).toFixed(2)}</td>
+                          <td className="text-right">{(tb.sgst || 0).toFixed(2)}</td>
+                          <td className="text-right">{(tb.igst || 0).toFixed(2)}</td>
+                          <td className="text-right font-bold">{(rec.totalAmount || 0).toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                    {cnRecs.length === 0 && (
+                      <tr><td colSpan={10} className="text-center" style={{padding: 20, color: '#6b7280'}}>No credit notes in this period.</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1018,8 +1135,31 @@ function App() {
       </div>
 
       <div className="invoice-paper" style={{ '--top-margin': `${config.topMargin}cm`, marginTop: `${config.topMargin}cm` }}>
+        {/* Document Type Toggle (no-print) + Printed label */}
+        <div className="no-print" style={{display: 'flex', justifyContent: 'center', marginBottom: 8}}>
+          <div className="doc-type-toggle">
+            <button
+              className={invoiceData.documentType !== 'credit-note' ? 'active-invoice' : ''}
+              onClick={() => handleInvoiceChange('documentType', 'invoice')}
+            >
+              Tax Invoice
+            </button>
+            <button
+              className={invoiceData.documentType === 'credit-note' ? 'active-credit-note' : ''}
+              onClick={() => handleInvoiceChange('documentType', 'credit-note')}
+            >
+              Credit Note
+            </button>
+          </div>
+        </div>
+        <div className="doc-type-label">
+          <div className="doc-type-meta">Pan No. :- {config.companyPan || ''}</div>
+          <div className="doc-type-title">{invoiceData.documentType === 'credit-note' ? 'CREDIT NOTE' : 'TAX INVOICE'}</div>
+          <div className="doc-type-meta">GSTN :- {config.companyGst || ''}</div>
+        </div>
+
         {/* Bill To & Invoice Meta */}
-        <div className="invoice-meta-row border-t">
+        <div className="invoice-meta-row">
           <div className="bill-to">
             <div className="grid-row">
               <label>Name</label><span>:</span>
@@ -1048,9 +1188,15 @@ function App() {
           </div>
           <div className="invoice-details">
             <div className="grid-row">
-              <label>Invoice No.</label><span>:</span>
+              <label>{invoiceData.documentType === 'credit-note' ? 'Credit Note No.' : 'Invoice No.'}</label><span>:</span>
               <input className="input-field" value={invoiceData.invoiceNo} onChange={e => handleInvoiceChange('invoiceNo', e.target.value)} />
             </div>
+            {invoiceData.documentType === 'credit-note' && (
+              <div className="grid-row">
+                <label>Ref. Inv. No.</label><span>:</span>
+                <input className="input-field" value={invoiceData.referenceInvoiceNo} onChange={e => handleInvoiceChange('referenceInvoiceNo', e.target.value)} placeholder="Original Invoice No." />
+              </div>
+            )}
             <div className="grid-row">
               <label>Date</label><span>:</span>
               <input className="input-field" value={invoiceData.invoiceDate} onChange={e => handleInvoiceChange('invoiceDate', e.target.value)} />

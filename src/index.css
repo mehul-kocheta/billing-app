@@ -563,3 +563,137 @@ input[type="number"] {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   border: 1px solid #e5e7eb;
 }
+
+/* Document Type Toggle */
+.doc-type-toggle {
+  display: inline-flex;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.doc-type-toggle button {
+  padding: 6px 14px;
+  border: none;
+  background: white;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 13px;
+  color: #6b7280;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.doc-type-toggle button:first-child {
+  border-right: 1px solid #d1d5db;
+}
+
+.doc-type-toggle button.active-invoice {
+  background: #2563eb;
+  color: #fff;
+}
+
+.doc-type-toggle button.active-credit-note {
+  background: #dc2626;
+  color: #fff;
+}
+
+/* Badge labels */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  vertical-align: middle;
+}
+
+.badge-invoice {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badge-credit-note {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.badge-b2c {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Document type label on printed invoice */
+.doc-type-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+}
+
+.doc-type-title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.doc-type-meta {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* GST report tab bar (multi-tab) */
+.gst-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #d1d5db;
+  margin-bottom: 16px;
+}
+
+.gst-tab-bar button {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.gst-tab-bar button:hover {
+  color: #374151;
+  background: #f9fafb;
+}
+
+.gst-tab-bar button.active-tab {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+  font-weight: 600;
+}
+
+/* Reference Invoice field for credit notes */
+.ref-invoice-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ref-invoice-row label {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+@media print {
+  .doc-type-toggle {
+    display: none !important;
+  }
+}

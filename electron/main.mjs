@@ -45,7 +45,7 @@ async function initDatabase() {
       if (Array.isArray(oldHistory) && oldHistory.length > 0) {
         for (const inv of oldHistory) {
           const d = inv.invoiceData || {};
-          const search = [d.billToName, d.billToAddress, d.invoiceDate, d.invoiceNo].filter(Boolean).join(' ').toLowerCase();
+          const search = [d.billToName, d.billToAddress, d.invoiceDate, d.invoiceNo, d.documentType === 'credit-note' ? 'credit note' : '', d.referenceInvoiceNo].filter(Boolean).join(' ').toLowerCase();
           await db.run(`
             INSERT OR IGNORE INTO invoices (id, timestamp, invoice_no, client_name, client_address, invoice_date, total_amount, search_text, full_data) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -170,7 +170,7 @@ ipcMain.handle('get-history-page', async (event, { query, page, limit }) => {
 ipcMain.handle('save-invoice', async (event, inv) => {
   try {
     const d = inv.invoiceData || {};
-    const search = [d.billToName, d.billToAddress, d.invoiceDate, d.invoiceNo].filter(Boolean).join(' ').toLowerCase();
+    const search = [d.billToName, d.billToAddress, d.invoiceDate, d.invoiceNo, d.documentType === 'credit-note' ? 'credit note' : '', d.referenceInvoiceNo].filter(Boolean).join(' ').toLowerCase();
     
     await db.run(`
       INSERT OR REPLACE INTO invoices (id, timestamp, invoice_no, client_name, client_address, invoice_date, total_amount, search_text, full_data) 

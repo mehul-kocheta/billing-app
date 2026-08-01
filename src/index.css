@@ -323,23 +323,23 @@ input[type="number"] {
 
 .footer-left {
   flex: 1;
-  padding: 10px;
+  padding: 4px 10px;
   border-right: 1px solid var(--border-color);
 }
 
 .footer-right {
   width: 350px;
-  padding: 10px;
+  padding: 4px 10px;
 }
 
 .bank-details .bank-row {
-  margin-bottom: 2px;
+  margin-bottom: 0;
 }
 
 .tax-calc-row {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .tax-calc-row.highlight {
@@ -374,6 +374,8 @@ input[type="number"] {
 .font-bold, .bold { font-weight: bold; }
 .text-sm { font-size: 12px; }
 .text-xs { font-size: 11px; }
+.text-xxs { font-size: 9px !important; line-height: 1.2 !important; }
+.text-tiny { font-size: 8px !important; }
 
 .border-t { border-top: 1px solid var(--border-color); }
 .border-b { border-bottom: 1px solid var(--border-color); }
@@ -431,22 +433,6 @@ input[type="number"] {
   border: 1px solid #e5e7eb;
 }
 
-@media print {
-.pl-4 { padding-left: 16px; }
-.mt-1 { margin-top: 4px; }
-.mt-2 { margin-top: 8px; }
-.mt-4 { margin-top: 16px; }
-.mt-16 { margin-top: 64px; }
-.mb-2 { margin-bottom: 8px; }
-.mb-12 { margin-bottom: 48px; }
-.ml-1 { margin-left: 4px; }
-.ml-2 { margin-left: 8px; }
-.mr-2 { margin-right: 8px; }
-
-.flex { display: flex; }
-.items-center { align-items: center; }
-.justify-center { justify-content: center; }
-.flex-grow { flex-grow: 1; }
 
 @media print {
   body {
@@ -480,4 +466,100 @@ input[type="number"] {
   .print-only {
     display: inline !important;
   }
+}
+
+.toast-notification {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #22c55e;
+  color: #fff;
+  padding: 12px 28px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  z-index: 9999;
+  animation: toast-in 0.3s ease-out;
+  pointer-events: none;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* GST Report Table */
+.gst-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.gst-report-table th {
+  background: #f3f4f6;
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  font-weight: 600;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.gst-report-table td {
+  padding: 12px 16px;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.gst-report-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* Breakdown table – scrollable wrapper for tight viewports */
+.gst-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+}
+
+.gst-table-wrapper .gst-report-table {
+  border: none;
+  min-width: 900px;          /* ensure it never collapses */
+}
+
+.gst-breakdown-table td,
+.gst-breakdown-table th {
+  padding: 10px 14px;
+}
+
+/* Cells that should wrap long names */
+.gst-cell-wrap {
+  word-break: break-word;
+  white-space: normal;
+  max-width: 220px;
+}
+
+/* GST numbers: monospace for readability */
+.gst-cell-mono {
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  word-break: break-all;
+  white-space: normal;
+}
+
+/* Settings page – give it breathing room */
+.settings-page {
+  background: white;
+  padding: 28px 32px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
 }

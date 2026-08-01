@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Printer, Settings, ArrowLeft, Save, FileText, History, Search } from 'lucide-react';
+import { Plus, Trash2, Printer, Settings, ArrowLeft, Save, FileText, History, Search, BarChart3, Calendar, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { numberToWords } from './utils.js';
 import './index.css';
 
@@ -119,6 +120,7 @@ const AutocompleteTextarea = ({ value, onChange, onSelect, options, ...props }) 
 
 const DEFAULT_CONFIG = {
   topMargin: 5,
+  companyStateCode: '23',
   bankInfo: {
     bank1Name: 'HDFC Bank A/c No. 99999827066916',
     bank1Branch: 'Gol Bazar Branch, Jabalpur IFSC:- HDFC0000224',
@@ -141,8 +143,34 @@ const DEFAULT_CONFIG = {
     { id: uuidv4(), product: 'New D/S BL Pole Board with Print', hsn: '9405' },
     { id: uuidv4(), product: 'New D/S BL Standee with Print', hsn: '9405' },
     { id: uuidv4(), product: 'Machine Sticker', hsn: '3919' }
-  ]
+  ],
+  enableRoundOff: true
 };
+
+function getFinancialYear(date) {
+  const d = date || new Date();
+  const month = d.getMonth(); // 0-indexed
+  const year = d.getFullYear();
+  if (month >= 3) { // April onwards
+    return `${year}-${year + 1}`;
+  }
+  return `${year - 1}-${year}`;
+}
+
+function getNextInvoiceNo(historyData) {
+  const fy = getFinancialYear();
+  let maxNum = 0;
+  for (const rec of historyData) {
+    const invNo = rec.invoiceData?.invoiceNo || '';
+    const match = invNo.match(/^(\d+)\s*\//);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+  const next = String(maxNum + 1).padStart(3, '0');
+  return `${next}/${fy}`;
+}
 
 function parseSizeToSqFt(sizeStr) {
   if (!sizeStr) return 0;
@@ -170,9 +198,22 @@ function parseSizeToSqFt(sizeStr) {
 function App() {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [historyData, setHistoryData] = useState([]);
-  const [currentView, setCurrentView] = useState('invoice'); // 'invoice' | 'settings' | 'history'
+  const [currentView, setCurrentView] = useState('invoice'); // 'invoice' | 'settings' | 'history' | 'gst-report'
+  const [gstTab, setGstTab] = useState('invoice'); // 'invoice' | 'hsn'
   const [searchQuery, setSearchQuery] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const todayInit = new Date();
+  const monthStartInit = new Date(todayInit.getFullYear(), todayInit.getMonth(), 1);
+  const [reportFrom, setReportFrom] = useState(`${String(monthStartInit.getDate()).padStart(2,'0')}.${String(monthStartInit.getMonth()+1).padStart(2,'0')}.${monthStartInit.getFullYear()}`);
+  const [reportTo, setReportTo] = useState(`${String(todayInit.getDate()).padStart(2,'0')}.${String(todayInit.getMonth()+1).padStart(2,'0')}.${todayInit.getFullYear()}`);
+  const toastTimer = useRef(null);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastMessage(''), 3000);
+  };
 
   // Invoice Data
   const [invoiceData, setInvoiceData] = useState({
@@ -182,7 +223,7 @@ function App() {
     billToGst: '23AABCR4589H1Z8',
     billToState: 'Madhya Pradesh',
     billToStateCode: '23',
-    invoiceNo: '007 / 2026 - 2027',
+    invoiceNo: '007/2026-2027',
     invoiceDate: '07.04.2026',
     orderNo: '',
   });
@@ -199,36 +240,55 @@ function App() {
 
   useEffect(() => {
     const loadData = async () => {
+      let savedConfig = null;
+      let savedHistory = null;
+
       if (window.electronAPI) {
-        const savedConfig = await window.electronAPI.readConfig();
-        if (savedConfig) {
-          // Object format migration for mappings if needed
-          if (savedConfig.productHsnMapping && !Array.isArray(savedConfig.productHsnMapping)) {
-             savedConfig.productHsnMapping = Object.entries(savedConfig.productHsnMapping).map(([k,v]) => ({id: uuidv4(), product: k, hsn: v}));
-          }
-          const merged = { ...DEFAULT_CONFIG };
-          for (let key in savedConfig) {
-             if (typeof savedConfig[key] === 'object' && savedConfig[key] !== null && !Array.isArray(savedConfig[key])) {
-                 merged[key] = { ...merged[key], ...savedConfig[key] };
-             } else {
-                 merged[key] = savedConfig[key];
-             }
-          }
-          setConfig(merged);
-        }
-        const savedHistory = await window.electronAPI.readHistory();
-        if (savedHistory && Array.isArray(savedHistory)) {
-          setHistoryData(savedHistory);
+        savedConfig = await window.electronAPI.readConfig();
+        savedHistory = await window.electronAPI.readHistory();
+      } else {
+        try {
+          const localConfig = localStorage.getItem('billing_config');
+          if (localConfig) savedConfig = JSON.parse(localConfig);
+          const localHistory = localStorage.getItem('billing_history');
+          if (localHistory) savedHistory = JSON.parse(localHistory);
+        } catch (e) {
+          console.error("Failed to read from localStorage", e);
         }
       }
+
+      if (savedConfig) {
+        // Object format migration for mappings if needed
+        if (savedConfig.productHsnMapping && !Array.isArray(savedConfig.productHsnMapping)) {
+           savedConfig.productHsnMapping = Object.entries(savedConfig.productHsnMapping).map(([k,v]) => ({id: uuidv4(), product: k, hsn: v}));
+        }
+        const merged = { ...DEFAULT_CONFIG };
+        for (let key in savedConfig) {
+           if (typeof savedConfig[key] === 'object' && savedConfig[key] !== null && !Array.isArray(savedConfig[key])) {
+               merged[key] = { ...merged[key], ...savedConfig[key] };
+           } else {
+               merged[key] = savedConfig[key];
+           }
+        }
+        setConfig(merged);
+      }
+      
+      if (savedHistory && Array.isArray(savedHistory)) {
+        setHistoryData(savedHistory);
+      }
+      
       setLoaded(true);
     };
     loadData();
   }, []);
 
   useEffect(() => {
-    if (loaded && window.electronAPI) {
-      window.electronAPI.writeConfig(config);
+    if (loaded) {
+      if (window.electronAPI) {
+        window.electronAPI.writeConfig(config);
+      } else {
+        localStorage.setItem('billing_config', JSON.stringify(config));
+      }
     }
   }, [config, loaded]);
 
@@ -335,7 +395,7 @@ function App() {
       billToGst: '',
       billToState: '',
       billToStateCode: '',
-      invoiceNo: '',
+      invoiceNo: getNextInvoiceNo(historyData),
       invoiceDate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'),
       orderNo: '',
     });
@@ -355,33 +415,74 @@ function App() {
   const itemsTotal = items.reduce((sum, item) => sum + calculateItemTotal(item), 0);
   const transportTotal = transportation.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
   const taxableValue = itemsTotal + transportTotal;
-  const cgst = taxableValue * (config.taxInfo.cgstRate / 100);
-  const sgst = taxableValue * (config.taxInfo.sgstRate / 100);
-  const totalAfterTax = taxableValue + cgst + sgst;
-  const roundedTotal = Math.round(totalAfterTax);
-  const roundOff = roundedTotal - totalAfterTax;
+
+  // IGST detection: inter-state if billToStateCode differs from company's
+  const isInterState = invoiceData.billToStateCode && config.companyStateCode && invoiceData.billToStateCode !== config.companyStateCode;
+  const cgstRate = config.taxInfo.cgstRate || 0;
+  const sgstRate = config.taxInfo.sgstRate || 0;
+  const igstRate = cgstRate + sgstRate;
+  const cgst = isInterState ? 0 : taxableValue * (cgstRate / 100);
+  const sgst = isInterState ? 0 : taxableValue * (sgstRate / 100);
+  const igst = isInterState ? taxableValue * (igstRate / 100) : 0;
+  const totalAfterTax = taxableValue + cgst + sgst + igst;
+  const isRoundOff = config.enableRoundOff !== false;
+  const roundedTotal = isRoundOff ? Math.round(totalAfterTax) : totalAfterTax;
+  const roundOff = isRoundOff ? roundedTotal - totalAfterTax : 0;
 
   const saveToHistory = async () => {
+    const invoiceKey = invoiceData.invoiceNo?.trim();
     const newBillRec = {
       id: uuidv4(),
       timestamp: Date.now(),
       totalAmount: roundedTotal,
       invoiceData,
       items,
-      transportation
+      transportation,
+      taxBreakdown: {
+        taxableValue,
+        cgst,
+        sgst,
+        igst,
+        isInterState
+      }
     };
-    const newHistory = [newBillRec, ...historyData];
+
+    let newHistory;
+    const existingIdx = invoiceKey ? historyData.findIndex(h => h.invoiceData?.invoiceNo?.trim() === invoiceKey) : -1;
+    if (existingIdx >= 0) {
+      // Update existing entry
+      newHistory = [...historyData];
+      newHistory[existingIdx] = { ...newBillRec, id: historyData[existingIdx].id };
+      showToast('Invoice updated!');
+    } else {
+      // New entry
+      newHistory = [newBillRec, ...historyData];
+      showToast('Invoice saved to history!');
+    }
     setHistoryData(newHistory);
     if (window.electronAPI) {
       await window.electronAPI.writeHistory(newHistory);
+    } else {
+      localStorage.setItem('billing_history', JSON.stringify(newHistory));
     }
-    alert('Invoice saved to history!');
   };
 
   const loadFromHistory = (rec) => {
-    setInvoiceData(rec.invoiceData);
-    setItems(rec.items);
-    setTransportation(rec.transportation || []);
+    const cloned = JSON.parse(JSON.stringify(rec));
+    setInvoiceData({
+      billToName: '',
+      billToAddress: '',
+      billToPin: '',
+      billToGst: '',
+      billToState: '',
+      billToStateCode: '',
+      invoiceNo: '',
+      invoiceDate: '',
+      orderNo: '',
+      ...cloned.invoiceData
+    });
+    setItems((cloned.items || []).map(item => ({ ...item, type: item.type || 'item', id: uuidv4() })));
+    setTransportation((cloned.transportation || []).map(t => ({ ...t, id: uuidv4() })));
     setCurrentView('invoice');
   };
 
@@ -410,6 +511,20 @@ function App() {
                 style={{width: 80}}
                 value={config.topMargin} 
                 onChange={e => handleConfigChange(null, 'topMargin', parseFloat(e.target.value) || 0)} 
+              />
+            </div>
+          </div>
+
+          <div className="settings-section mt-4">
+            <h3>Company State Code</h3>
+            <p>Your company's GST state code. When a customer's state code differs, IGST will be applied instead of CGST+SGST.</p>
+            <div className="flex-row items-center" style={{marginTop: 10, gap: 10}}>
+              <label>State Code:</label>
+              <input 
+                className="input-field border" 
+                style={{width: 80}}
+                value={config.companyStateCode} 
+                onChange={e => handleConfigChange(null, 'companyStateCode', e.target.value)} 
               />
             </div>
           </div>
@@ -495,6 +610,319 @@ function App() {
     );
   }
 
+  if (currentView === 'gst-report') {
+    const parseInvoiceDate = (dateStr) => {
+      if (!dateStr) return null;
+      const parts = dateStr.split('.');
+      if (parts.length === 3) {
+        return new Date(parts[2], parts[1] - 1, parts[0]);
+      }
+      return null;
+    };
+
+    const fromDate = parseInvoiceDate(reportFrom);
+    const toDate = parseInvoiceDate(reportTo);
+
+    const filteredRecs = historyData.filter(rec => {
+      const d = parseInvoiceDate(rec.invoiceData?.invoiceDate);
+      if (!d || !fromDate || !toDate) return false;
+      return d >= fromDate && d <= toDate;
+    });
+
+    let totalSales = 0, totalCgst = 0, totalSgst = 0, totalIgst = 0;
+    for (const rec of filteredRecs) {
+      if (rec.taxBreakdown) {
+        totalSales += rec.taxBreakdown.taxableValue || 0;
+        totalCgst += rec.taxBreakdown.cgst || 0;
+        totalSgst += rec.taxBreakdown.sgst || 0;
+        totalIgst += rec.taxBreakdown.igst || 0;
+      } else {
+        const recItems = rec.items || [];
+        const recTransport = rec.transportation || [];
+        const recItemsTotal = recItems.reduce((s, it) => {
+          if (it.type === 'title') return s;
+          return s + (it.sqft > 0 ? it.sqft * it.rate : it.qty * it.rate);
+        }, 0);
+        const recTransTotal = recTransport.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        const recTaxable = recItemsTotal + recTransTotal;
+        const recStateCode = rec.invoiceData?.billToStateCode;
+        const recIsInter = recStateCode && config.companyStateCode && recStateCode !== config.companyStateCode;
+        totalSales += recTaxable;
+        if (recIsInter) {
+          totalIgst += recTaxable * ((config.taxInfo.cgstRate + config.taxInfo.sgstRate) / 100);
+        } else {
+          totalCgst += recTaxable * (config.taxInfo.cgstRate / 100);
+          totalSgst += recTaxable * (config.taxInfo.sgstRate / 100);
+        }
+      }
+    }
+    const grandTotal = totalSales + totalCgst + totalSgst + totalIgst;
+
+    const hsnTotals = {};
+    for (const rec of filteredRecs) {
+      const isInterState = rec.taxBreakdown ? rec.taxBreakdown.isInterState : (rec.invoiceData?.billToStateCode && config.companyStateCode && rec.invoiceData?.billToStateCode !== config.companyStateCode);
+      
+      const cgstRate = config.taxInfo.cgstRate || 0;
+      const sgstRate = config.taxInfo.sgstRate || 0;
+      const igstRate = cgstRate + sgstRate;
+
+      for(const item of rec.items || []) {
+         if (item.type === 'title') continue;
+         const hsn = item.hsn || 'No HSN';
+         const taxable = item.sqft > 0 ? item.sqft * item.rate : item.qty * item.rate;
+         if (!hsnTotals[hsn]) hsnTotals[hsn] = { hsn, taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+         
+         const itemCgst = isInterState ? 0 : taxable * (cgstRate / 100);
+         const itemSgst = isInterState ? 0 : taxable * (sgstRate / 100);
+         const itemIgst = isInterState ? taxable * (igstRate / 100) : 0;
+         
+         hsnTotals[hsn].taxable += taxable;
+         hsnTotals[hsn].cgst += itemCgst;
+         hsnTotals[hsn].sgst += itemSgst;
+         hsnTotals[hsn].igst += itemIgst;
+         hsnTotals[hsn].total += (taxable + itemCgst + itemSgst + itemIgst);
+      }
+      
+      const transTotal = (rec.transportation || []).reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      if (transTotal > 0) {
+         const hsn = 'Transport';
+         if (!hsnTotals[hsn]) hsnTotals[hsn] = { hsn, taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+         const itemCgst = isInterState ? 0 : transTotal * (cgstRate / 100);
+         const itemSgst = isInterState ? 0 : transTotal * (sgstRate / 100);
+         const itemIgst = isInterState ? transTotal * (igstRate / 100) : 0;
+         hsnTotals[hsn].taxable += transTotal;
+         hsnTotals[hsn].cgst += itemCgst;
+         hsnTotals[hsn].sgst += itemSgst;
+         hsnTotals[hsn].igst += itemIgst;
+         hsnTotals[hsn].total += (transTotal + itemCgst + itemSgst + itemIgst);
+      }
+    }
+    const hsnData = Object.values(hsnTotals);
+
+    const exportToExcel = () => {
+      // Summary sheet data
+      const summaryData = [
+        { Description: 'Total Taxable Value (Sales)', 'Amount (₹)': parseFloat(totalSales.toFixed(2)) },
+        { Description: 'Total CGST Collected', 'Amount (₹)': parseFloat(totalCgst.toFixed(2)) },
+        { Description: 'Total SGST Collected', 'Amount (₹)': parseFloat(totalSgst.toFixed(2)) },
+        { Description: 'Total IGST Collected', 'Amount (₹)': parseFloat(totalIgst.toFixed(2)) },
+        { Description: 'Grand Total (Sales + Tax)', 'Amount (₹)': parseFloat(grandTotal.toFixed(2)) },
+      ];
+
+      // Breakdown sheet data
+      const breakdownData = filteredRecs.map(rec => {
+        const tb = rec.taxBreakdown || {};
+        return {
+          'Inv No.': rec.invoiceData?.invoiceNo || '',
+          'Date': rec.invoiceData?.invoiceDate || '',
+          'Client': rec.invoiceData?.billToName || '',
+          'GST No.': rec.invoiceData?.billToGst || '',
+          'Taxable': parseFloat((tb.taxableValue || 0).toFixed(2)),
+          'CGST': parseFloat((tb.cgst || 0).toFixed(2)),
+          'SGST': parseFloat((tb.sgst || 0).toFixed(2)),
+          'IGST': parseFloat((tb.igst || 0).toFixed(2)),
+          'Total': parseFloat((rec.totalAmount || 0).toFixed(2)),
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+      wsSummary['!cols'] = [{ wch: 35 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'GST Summary');
+
+      if (breakdownData.length > 0) {
+        const wsBreakdown = XLSX.utils.json_to_sheet(breakdownData);
+        wsBreakdown['!cols'] = [
+          { wch: 18 }, { wch: 14 }, { wch: 30 }, { wch: 20 },
+          { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }
+        ];
+        XLSX.utils.book_append_sheet(wb, wsBreakdown, 'Invoice Breakdown');
+      }
+
+      if (hsnData.length > 0) {
+        const hsnExportData = hsnData.map(h => ({
+          'HSN Code': h.hsn,
+          'Taxable': parseFloat(h.taxable.toFixed(2)),
+          'CGST': parseFloat(h.cgst.toFixed(2)),
+          'SGST': parseFloat(h.sgst.toFixed(2)),
+          'IGST': parseFloat(h.igst.toFixed(2)),
+          'Total': parseFloat(h.total.toFixed(2)),
+        }));
+        const wsHsn = XLSX.utils.json_to_sheet(hsnExportData);
+        wsHsn['!cols'] = [
+          { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+        ];
+        XLSX.utils.book_append_sheet(wb, wsHsn, 'HSN Breakdown');
+      }
+
+      const fileName = `GST_Report_${reportFrom.replace(/\./g, '-')}_to_${reportTo.replace(/\./g, '-')}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast('Excel file exported successfully!');
+    };
+
+    return (
+      <div className="app-container">
+        <div className="header-actions" style={{justifyContent: 'flex-start', gap: 12}}>
+          <button onClick={() => setCurrentView('invoice')} className="btn">
+            <ArrowLeft size={18} /> Back to Invoice
+          </button>
+          <button onClick={exportToExcel} className="btn primary" style={{marginLeft: 'auto'}}>
+            <Download size={18} /> Export to Excel
+          </button>
+        </div>
+        <div className="settings-page">
+          <h2><BarChart3 size={22} style={{display:'inline', verticalAlign:'middle', marginRight: 8}} />GST Summary Report</h2>
+          <p className="text-sm mt-2" style={{color: '#6b7280'}}>Filter by invoice date range to calculate totals for GST portal submission.</p>
+          
+          <div className="flex items-center gap-4 mt-4" style={{flexWrap: 'wrap'}}>
+            <div className="flex items-center gap-2">
+              <Calendar size={16} />
+              <label className="font-bold">From:</label>
+              <input 
+                className="input-field border p-2" 
+                style={{width: 140}}
+                value={reportFrom} 
+                onChange={e => setReportFrom(e.target.value)} 
+                placeholder="DD.MM.YYYY"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar size={16} />
+              <label className="font-bold">To:</label>
+              <input 
+                className="input-field border p-2" 
+                style={{width: 140}}
+                value={reportTo} 
+                onChange={e => setReportTo(e.target.value)} 
+                placeholder="DD.MM.YYYY"
+              />
+            </div>
+            <span className="text-sm" style={{color: '#6b7280'}}>({filteredRecs.length} invoice{filteredRecs.length !== 1 ? 's' : ''} found)</span>
+          </div>
+
+          <table className="gst-report-table mt-4">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th className="text-right">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Total Taxable Value (Sales)</td>
+                <td className="text-right">{totalSales.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td>Total CGST Collected</td>
+                <td className="text-right">{totalCgst.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td>Total SGST Collected</td>
+                <td className="text-right">{totalSgst.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td>Total IGST Collected</td>
+                <td className="text-right">{totalIgst.toFixed(2)}</td>
+              </tr>
+              <tr className="font-bold" style={{borderTop: '2px solid #000'}}>
+                <td>Grand Total (Sales + Tax)</td>
+                <td className="text-right">{grandTotal.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {filteredRecs.length > 0 && (
+            <div className="mt-4">
+              <div className="flex gap-4 mb-4" style={{borderBottom: '1px solid #d1d5db'}}>
+                <button 
+                  className={`pb-2 ${gstTab === 'invoice' ? 'font-bold border-b-2' : 'text-gray-500'}`} 
+                  style={gstTab === 'invoice' ? {borderColor: '#2563eb', color: '#2563eb'} : {}}
+                  onClick={() => setGstTab('invoice')}
+                >
+                  Invoice Wise
+                </button>
+                <button 
+                  className={`pb-2 ${gstTab === 'hsn' ? 'font-bold border-b-2' : 'text-gray-500'}`} 
+                  style={gstTab === 'hsn' ? {borderColor: '#2563eb', color: '#2563eb'} : {}}
+                  onClick={() => setGstTab('hsn')}
+                >
+                  HSN Code Wise
+                </button>
+              </div>
+
+              {gstTab === 'invoice' && (
+              <div className="gst-table-wrapper">
+                <table className="gst-report-table gst-breakdown-table">
+                  <thead>
+                    <tr>
+                      <th style={{width: '10%', minWidth: 90}}>Inv No.</th>
+                      <th style={{width: '10%', minWidth: 100}}>Date</th>
+                      <th style={{width: '20%', minWidth: 150}}>Client</th>
+                      <th style={{width: '16%', minWidth: 140}}>GST No.</th>
+                      <th className="text-right" style={{width: '10%', minWidth: 90}}>Taxable</th>
+                      <th className="text-right" style={{width: '8%', minWidth: 80}}>CGST</th>
+                      <th className="text-right" style={{width: '8%', minWidth: 80}}>SGST</th>
+                      <th className="text-right" style={{width: '8%', minWidth: 80}}>IGST</th>
+                      <th className="text-right" style={{width: '10%', minWidth: 90}}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRecs.map(rec => {
+                      const tb = rec.taxBreakdown || {};
+                      return (
+                        <tr key={rec.id}>
+                          <td>{rec.invoiceData?.invoiceNo}</td>
+                          <td>{rec.invoiceData?.invoiceDate}</td>
+                          <td className="gst-cell-wrap">{rec.invoiceData?.billToName}</td>
+                          <td className="gst-cell-mono">{rec.invoiceData?.billToGst || '—'}</td>
+                          <td className="text-right">{(tb.taxableValue || 0).toFixed(2)}</td>
+                          <td className="text-right">{(tb.cgst || 0).toFixed(2)}</td>
+                          <td className="text-right">{(tb.sgst || 0).toFixed(2)}</td>
+                          <td className="text-right">{(tb.igst || 0).toFixed(2)}</td>
+                          <td className="text-right font-bold">{(rec.totalAmount || 0).toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              )}
+
+              {gstTab === 'hsn' && (
+              <div className="gst-table-wrapper">
+                <table className="gst-report-table gst-breakdown-table">
+                  <thead>
+                    <tr>
+                      <th style={{width: '20%'}}>HSN Code</th>
+                      <th className="text-right" style={{width: '16%'}}>Taxable</th>
+                      <th className="text-right" style={{width: '16%'}}>CGST</th>
+                      <th className="text-right" style={{width: '16%'}}>SGST</th>
+                      <th className="text-right" style={{width: '16%'}}>IGST</th>
+                      <th className="text-right" style={{width: '16%'}}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hsnData.map((h, i) => (
+                      <tr key={i}>
+                        <td className="font-bold">{h.hsn}</td>
+                        <td className="text-right">{h.taxable.toFixed(2)}</td>
+                        <td className="text-right">{h.cgst.toFixed(2)}</td>
+                        <td className="text-right">{h.sgst.toFixed(2)}</td>
+                        <td className="text-right">{h.igst.toFixed(2)}</td>
+                        <td className="text-right font-bold">{h.total.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Invoice View
   let srNo = 1;
 
@@ -507,6 +935,9 @@ function App() {
           </button>
           <button onClick={() => setCurrentView('history')} className="btn">
             <History size={18} /> History
+          </button>
+          <button onClick={() => setCurrentView('gst-report')} className="btn">
+            <BarChart3 size={18} /> GST Report
           </button>
         </div>
         <div className="flex gap-2">
@@ -705,67 +1136,88 @@ function App() {
         {/* Footer Area */}
         <div className="invoice-footer border-t">
           <div className="footer-left">
-            <div className="bank-details border-b pb-1 mb-1">
+            <div className="bank-details text-xxs">
               <div className="bank-row">
-                <input className="input-field w-full font-bold py-0" value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
+                <input className="input-field w-full font-bold py-0 text-xxs" value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
               </div>
               <div className="bank-row">
-                <input className="input-field w-full py-0" value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
-              </div>
-              <div className="bank-row border-t mt-1 pt-1">
-                <input className="input-field w-full font-bold py-0" value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
+                <input className="input-field w-full py-0 text-xxs" value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
               </div>
               <div className="bank-row">
-                <input className="input-field w-full py-0" value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
+                <input className="input-field w-full font-bold py-0 text-xxs" value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
+              </div>
+              <div className="bank-row">
+                <input className="input-field w-full py-0 text-xxs" value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
               </div>
             </div>
-            <div className="amount-in-words font-bold mb-1 mt-1">
+            <div className="amount-in-words font-bold mb-1 mt-1 text-xxs">
               Rs. {numberToWords(roundedTotal)}
             </div>
-            <div className="terms-conditions text-xs text-gray-600">
-              <input className="input-field w-full py-0" value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
-              <input className="input-field w-full py-0" value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
-              <input className="input-field w-full py-0" value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
-              <input className="input-field w-full py-0" value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
+            <div className="terms-conditions text-xxs text-gray-600">
+              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
+              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
+              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
+              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
             </div>
-            <div className="jurisdiction text-xs mt-2">
+            <div className="jurisdiction text-xxs mt-2">
               <p>E. & O.E.</p>
               <p>Subject to Jabalpur Jurisdiction</p>
             </div>
           </div>
           
-          <div className="footer-right border-l pl-4">
+          <div className="footer-right border-l pl-4 text-xxs">
             <div className="tax-calc-row">
               <span>Total</span>
               <span className="text-right">{taxableValue.toFixed(2)}</span>
             </div>
-            <div className="tax-calc-row font-bold border-t pt-1 mt-1">
+            <div className="tax-calc-row font-bold">
               <span>Total Amount/Taxable Value :</span>
               <span className="text-right">{taxableValue.toFixed(2)}</span>
             </div>
+            {isInterState ? (
+              <div className="tax-calc-row">
+                <span className="flex items-center">Add : IGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={igstRate} readOnly />{' '}%</span>
+                <span className="text-right">{igst.toFixed(2)}</span>
+              </div>
+            ) : (
+              <>
+                <div className="tax-calc-row">
+                  <span className="flex items-center">Add : CGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.cgstRate} onChange={e => handleConfigChange('taxInfo', 'cgstRate', parseFloat(e.target.value) || 0)} />%</span>
+                  <span className="text-right">{cgst.toFixed(2)}</span>
+                </div>
+                <div className="tax-calc-row">
+                  <span className="flex items-center">Add : SGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.sgstRate} onChange={e => handleConfigChange('taxInfo', 'sgstRate', parseFloat(e.target.value) || 0)} />%</span>
+                  <span className="text-right">{sgst.toFixed(2)}</span>
+                </div>
+              </>
+            )}
             <div className="tax-calc-row">
-              <span className="flex items-center">Add : CGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.cgstRate} onChange={e => handleConfigChange('taxInfo', 'cgstRate', parseFloat(e.target.value) || 0)} />%</span>
-              <span className="text-right">{cgst.toFixed(2)}</span>
-            </div>
-            <div className="tax-calc-row">
-              <span className="flex items-center">Add : SGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.sgstRate} onChange={e => handleConfigChange('taxInfo', 'sgstRate', parseFloat(e.target.value) || 0)} />%</span>
-              <span className="text-right">{sgst.toFixed(2)}</span>
-            </div>
-            <div className="tax-calc-row">
-              <span>Round Off</span>
+              <span className="flex items-center">
+                Round Off
+                <input 
+                  type="checkbox" 
+                  title="Enable Round Off"
+                  className="no-print ml-2" 
+                  checked={config.enableRoundOff !== false} 
+                  onChange={e => handleConfigChange(null, 'enableRoundOff', e.target.checked)} 
+                />
+              </span>
               <span className="text-right">{roundOff.toFixed(2)}</span>
             </div>
-            <div className="tax-calc-row font-bold text-lg border-t pt-1 mt-1">
+            <div className="tax-calc-row font-bold">
               <span>Total Amount After Tax :</span>
               <span className="text-right">{roundedTotal.toFixed(2)}</span>
             </div>
-            <div className="signature-area text-right mt-8">
-              <p className="mb-8 text-sm">for : Jain Advertising Agency</p>
-              <p className="text-sm">Proprietor.</p>
+            <div className="signature-area text-right mt-2">
+              <p className="mb-2 text-xxs">for : Jain Advertising Agency</p>
+              <p className="text-xxs">Proprietor.</p>
             </div>
           </div>
         </div>
       </div>
+      {toastMessage && (
+        <div className="toast-notification">{toastMessage}</div>
+      )}
     </div>
   );
 }

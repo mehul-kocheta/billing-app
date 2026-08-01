@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readConfig: () => ipcRenderer.invoke('read-config'),
   writeConfig: (data) => ipcRenderer.invoke('write-config', data),
   printToPdf: () => ipcRenderer.invoke('print-to-pdf'),
-  readHistory: () => ipcRenderer.invoke('read-history'),
-  writeHistory: (data) => ipcRenderer.invoke('write-history', data),
+  getHistoryPage: (query, page, limit) => ipcRenderer.invoke('get-history-page', { query, page, limit }),
+  saveInvoice: (data) => ipcRenderer.invoke('save-invoice', data),
+  deleteInvoice: (id) => ipcRenderer.invoke('delete-invoice', id),
+  getAllHistory: () => ipcRenderer.invoke('get-all-history'),
 });

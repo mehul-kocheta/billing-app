@@ -198,6 +198,10 @@ function parseSizeToSqFt(sizeStr) {
 function App() {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [historyData, setHistoryData] = useState([]);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const [historyCurrentPage, setHistoryCurrentPage] = useState(1);
+  const [allHistoryForReport, setAllHistoryForReport] = useState([]);
+  const HISTORY_LIMIT = 15;
   const [currentView, setCurrentView] = useState('invoice'); // 'invoice' | 'settings' | 'history' | 'gst-report'
   const [gstTab, setGstTab] = useState('invoice'); // 'invoice' | 'hsn'
   const [searchQuery, setSearchQuery] = useState('');
@@ -241,17 +245,15 @@ function App() {
   useEffect(() => {
     const loadData = async () => {
       let savedConfig = null;
-      let savedHistory = null;
 
       if (window.electronAPI) {
         savedConfig = await window.electronAPI.readConfig();
-        savedHistory = await window.electronAPI.readHistory();
       } else {
         try {
           const localConfig = localStorage.getItem('billing_config');
           if (localConfig) savedConfig = JSON.parse(localConfig);
           const localHistory = localStorage.getItem('billing_history');
-          if (localHistory) savedHistory = JSON.parse(localHistory);
+          if (localHistory) setHistoryData(JSON.parse(localHistory));
         } catch (e) {
           console.error("Failed to read from localStorage", e);
         }
@@ -273,14 +275,48 @@ function App() {
         setConfig(merged);
       }
       
-      if (savedHistory && Array.isArray(savedHistory)) {
-        setHistoryData(savedHistory);
-      }
-      
       setLoaded(true);
     };
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (currentView === 'history' && window.electronAPI) {
+      const fetchPage = async () => {
+         const res = await window.electronAPI.getHistoryPage(searchQuery, historyCurrentPage, HISTORY_LIMIT);
+         if (res && res.success) {
+           setHistoryData(res.data);
+           setHistoryTotalPages(Math.ceil(res.totalCount / HISTORY_LIMIT) || 1);
+         }
+      };
+      const timeout = setTimeout(fetchPage, 300);
+      return () => clearTimeout(timeout);
+    }
+  }, [currentView, searchQuery, historyCurrentPage]);
+
+  useEffect(() => {
+    if (currentView === 'gst-report' && window.electronAPI) {
+      window.electronAPI.getAllHistory().then(data => setAllHistoryForReport(data));
+    }
+  }, [currentView]);
+
+  const deleteInvoice = async (id) => {
+    if (window.confirm("Are you sure you want to delete this invoice?")) {
+       if (window.electronAPI) {
+         await window.electronAPI.deleteInvoice(id);
+         const res = await window.electronAPI.getHistoryPage(searchQuery, historyCurrentPage, HISTORY_LIMIT);
+         if (res && res.success) {
+           setHistoryData(res.data);
+           setHistoryTotalPages(Math.ceil(res.totalCount / HISTORY_LIMIT) || 1);
+         }
+       } else {
+         const newHistory = historyData.filter(h => h.id !== id);
+         setHistoryData(newHistory);
+         localStorage.setItem('billing_history', JSON.stringify(newHistory));
+       }
+       showToast('Invoice deleted!');
+    }
+  };
 
   useEffect(() => {
     if (loaded) {
@@ -387,7 +423,14 @@ function App() {
     }
   };
 
-  const newBill = () => {
+  const newBill = async () => {
+    let nextNo = '';
+    if (window.electronAPI) {
+       const all = await window.electronAPI.getAllHistory();
+       nextNo = getNextInvoiceNo(all);
+    } else {
+       nextNo = getNextInvoiceNo(historyData);
+    }
     setInvoiceData({
       billToName: '',
       billToAddress: '',
@@ -395,7 +438,7 @@ function App() {
       billToGst: '',
       billToState: '',
       billToStateCode: '',
-      invoiceNo: getNextInvoiceNo(historyData),
+      invoiceNo: nextNo,
       invoiceDate: new Date().toLocaleDateString('en-GB').replace(/\//g, '.'),
       orderNo: '',
     });
@@ -447,23 +490,21 @@ function App() {
       }
     };
 
-    let newHistory;
-    const existingIdx = invoiceKey ? historyData.findIndex(h => h.invoiceData?.invoiceNo?.trim() === invoiceKey) : -1;
-    if (existingIdx >= 0) {
-      // Update existing entry
-      newHistory = [...historyData];
-      newHistory[existingIdx] = { ...newBillRec, id: historyData[existingIdx].id };
-      showToast('Invoice updated!');
-    } else {
-      // New entry
-      newHistory = [newBillRec, ...historyData];
-      showToast('Invoice saved to history!');
-    }
-    setHistoryData(newHistory);
     if (window.electronAPI) {
-      await window.electronAPI.writeHistory(newHistory);
+      await window.electronAPI.saveInvoice(newBillRec);
+      showToast('Invoice saved successfully!');
     } else {
+      let newHistory;
+      const existingIdx = invoiceKey ? historyData.findIndex(h => h.invoiceData?.invoiceNo?.trim() === invoiceKey) : -1;
+      if (existingIdx >= 0) {
+        newHistory = [...historyData];
+        newHistory[existingIdx] = { ...newBillRec, id: historyData[existingIdx].id };
+      } else {
+        newHistory = [newBillRec, ...historyData];
+      }
+      setHistoryData(newHistory);
       localStorage.setItem('billing_history', JSON.stringify(newHistory));
+      showToast('Invoice saved locally!');
     }
   };
 
@@ -560,7 +601,7 @@ function App() {
   }
 
   if (currentView === 'history') {
-    const filtered = historyData.filter(h => {
+    const filtered = window.electronAPI ? historyData : historyData.filter(h => {
        const search = searchQuery.toLowerCase();
        const d = h.invoiceData;
        return (d.billToName && d.billToName.toLowerCase().includes(search)) ||
@@ -584,7 +625,10 @@ function App() {
                 className="input-field border flex-grow p-2" 
                 placeholder="Search by name, address, date, or invoice no..." 
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  setHistoryCurrentPage(1);
+                }}
              />
           </div>
           <div className="history-list mt-4">
@@ -598,13 +642,33 @@ function App() {
                         <strong>Inv No:</strong> {rec.invoiceData.invoiceNo} | <strong>Date:</strong> {rec.invoiceData.invoiceDate}
                       </p>
                    </div>
-                   <div className="text-right">
-                      <p className="font-bold text-lg mb-2">Rs. {rec.totalAmount}</p>
-                      <button onClick={() => loadFromHistory(rec)} className="btn primary">Load Invoice</button>
+                   <div className="text-right flex items-center justify-end gap-4">
+                      <p className="font-bold text-lg">Rs. {rec.totalAmount}</p>
+                      <button onClick={() => loadFromHistory(rec)} className="btn primary">Load</button>
+                      <button onClick={() => deleteInvoice(rec.id)} className="btn icon-btn text-red p-2 border rounded"><Trash2 size={16}/></button>
                    </div>
                 </div>
              ))}
           </div>
+          {window.electronAPI && historyTotalPages > 1 && (
+            <div className="flex justify-between items-center mt-4 p-4 border-t">
+               <button 
+                  className="btn" 
+                  disabled={historyCurrentPage <= 1} 
+                  onClick={() => setHistoryCurrentPage(p => Math.max(1, p - 1))}
+               >
+                 Previous
+               </button>
+               <span>Page {historyCurrentPage} of {historyTotalPages}</span>
+               <button 
+                  className="btn" 
+                  disabled={historyCurrentPage >= historyTotalPages} 
+                  onClick={() => setHistoryCurrentPage(p => Math.min(historyTotalPages, p + 1))}
+               >
+                 Next
+               </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -623,7 +687,7 @@ function App() {
     const fromDate = parseInvoiceDate(reportFrom);
     const toDate = parseInvoiceDate(reportTo);
 
-    const filteredRecs = historyData.filter(rec => {
+    const filteredRecs = (window.electronAPI ? allHistoryForReport : historyData).filter(rec => {
       const d = parseInvoiceDate(rec.invoiceData?.invoiceDate);
       if (!d || !fromDate || !toDate) return false;
       return d >= fromDate && d <= toDate;

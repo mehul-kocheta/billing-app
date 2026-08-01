@@ -1,19 +1,56 @@
 import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Trash2, Printer, Settings, ArrowLeft, Save, FileText, History, Search, BarChart3, Calendar, Download } from 'lucide-react';
+import { Plus, Trash2, Printer, Settings, ArrowLeft, Save, FileText, History, Search, BarChart3, Calendar, Download, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { numberToWords } from './utils.js';
 import './index.css';
 
-const ExpandingTextarea = ({ value, onChange, ...props }) => {
+const RichTextEditor = ({ value, onChange, style, ...props }) => {
   const ref = useRef(null);
+
   useEffect(() => {
-    if (ref.current) {
-      ref.current.style.height = 'auto';
-      ref.current.style.height = ref.current.scrollHeight + 'px';
+    if (ref.current && value !== ref.current.innerHTML) {
+      ref.current.innerHTML = value || '';
     }
   }, [value]);
-  return <textarea ref={ref} value={value} onChange={onChange} rows={1} style={{resize: 'none', overflow: 'hidden'}} {...props} />;
+
+  const handleInput = () => {
+    if (onChange && ref.current) {
+      onChange({ target: { value: ref.current.innerHTML } });
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === '>' || e.key === '.')) {
+      e.preventDefault();
+      let size = parseInt(document.queryCommandValue('fontSize')) || 3;
+      if (size < 7) document.execCommand('fontSize', false, size + 1);
+    }
+    if (e.ctrlKey && e.shiftKey && (e.key === '<' || e.key === ',')) {
+      e.preventDefault();
+      let size = parseInt(document.queryCommandValue('fontSize')) || 3;
+      if (size > 1) document.execCommand('fontSize', false, size - 1);
+    }
+    if (props.onKeyDown) props.onKeyDown(e);
+  };
+
+  return (
+    <div
+      ref={ref}
+      contentEditable
+      onInput={handleInput}
+      onKeyDown={handleKeyDown}
+      style={{
+        minHeight: '24px',
+        outline: 'none',
+        whiteSpace: 'pre-wrap',
+        cursor: 'text',
+        wordBreak: 'break-word',
+        ...style
+      }}
+      {...props}
+    />
+  );
 };
 
 function levenshtein(a, b) {
@@ -64,15 +101,16 @@ const AutocompleteTextarea = ({ value, onChange, onSelect, options, ...props }) 
   const wrapperRef = useRef(null);
 
   useEffect(() => {
-    if (!value || !isOpen) {
+    const plainTextValue = value ? value.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim() : '';
+    if (!plainTextValue || !isOpen) {
       setMatches([]);
       return;
     }
     const scored = options.map(opt => ({
       ...opt,
-      score: keywordFuzzyScore(value, opt.product)
+      score: keywordFuzzyScore(plainTextValue, opt.product)
     }));
-    const maxAllowedScore = value.split(/\s+/).filter(Boolean).length * 4; 
+    const maxAllowedScore = plainTextValue.split(/\s+/).filter(Boolean).length * 4; 
     const filtered = scored.filter(s => s.score <= maxAllowedScore).sort((a, b) => a.score - b.score).slice(0, 6);
     setMatches(filtered);
   }, [value, options, isOpen]);
@@ -89,7 +127,7 @@ const AutocompleteTextarea = ({ value, onChange, onSelect, options, ...props }) 
 
   return (
     <div ref={wrapperRef} style={{ position: 'relative', width: '100%' }}>
-      <ExpandingTextarea
+      <RichTextEditor
         value={value}
         onChange={(e) => {
           onChange(e);
@@ -409,6 +447,10 @@ function App() {
 
   const addTransport = () => {
     setTransportation(prev => [...prev, { id: uuidv4(), description: '', amount: 0 }]);
+  };
+
+  const addTransportDescription = () => {
+    setTransportation(prev => [...prev, { id: uuidv4(), description: '', amount: 0, isDescriptionOnly: true }]);
   };
 
   const removeTransport = (id) => {
@@ -1208,6 +1250,67 @@ function App() {
           </div>
         </div>
 
+        {/* Invoice Table Toolbar */}
+        <div className="no-print edit-toolbar flex gap-2 items-center mb-2 p-2 bg-gray-100 rounded border" style={{fontSize: '14px'}}>
+          <span className="font-bold text-gray-600 mr-2">Formatting:</span>
+          <button onMouseDown={e => {e.preventDefault(); document.execCommand('bold', false, null);}} className="btn icon-btn p-1" title="Bold"><Bold size={16}/></button>
+          <button onMouseDown={e => {e.preventDefault(); document.execCommand('italic', false, null);}} className="btn icon-btn p-1" title="Italic"><Italic size={16}/></button>
+          <button onMouseDown={e => {e.preventDefault(); document.execCommand('underline', false, null);}} className="btn icon-btn p-1" title="Underline"><Underline size={16}/></button>
+          
+          <div className="border-l h-6 mx-1 border-gray-300" />
+          
+          <select 
+            onMouseDown={() => {
+              const sel = window.getSelection();
+              if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
+            }} 
+            onChange={e => { 
+              if (window.savedRange) {
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(window.savedRange);
+              }
+              document.execCommand('fontName', false, e.target.value); 
+              e.target.selectedIndex = 0; 
+            }} 
+            className="input-field py-1" style={{height: 'auto', minWidth: '100px'}}>
+            <option value="">Font</option>
+            <option value="Arial">Arial</option>
+            <option value="Courier New">Courier New</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Times New Roman">Times New Roman</option>
+            <option value="Verdana">Verdana</option>
+          </select>
+          
+          <select 
+            onMouseDown={() => {
+              const sel = window.getSelection();
+              if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
+            }} 
+            onChange={e => { 
+              if (window.savedRange) {
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(window.savedRange);
+              }
+              document.execCommand('fontSize', false, e.target.value); 
+              e.target.selectedIndex = 0; 
+            }} 
+            className="input-field py-1" style={{height: 'auto', minWidth: '80px'}}>
+            <option value="">Size</option>
+            <option value="1">Small</option>
+            <option value="3">Normal</option>
+            <option value="5">Large</option>
+            <option value="7">Huge</option>
+          </select>
+          
+          <div className="border-l h-6 mx-1 border-gray-300" />
+          
+          <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyLeft', false, null);}} className="btn icon-btn p-1" title="Align Left"><AlignLeft size={16}/></button>
+          <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyCenter', false, null);}} className="btn icon-btn p-1" title="Align Center"><AlignCenter size={16}/></button>
+          <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyRight', false, null);}} className="btn icon-btn p-1" title="Align Right"><AlignRight size={16}/></button>
+        </div>
+
         {/* Invoice Table */}
         <table className="invoice-table">
           <thead>
@@ -1230,9 +1333,8 @@ function App() {
                   <tr key={item.id} className="title-row">
                     <td></td>
                     <td>
-                      <ExpandingTextarea 
+                      <RichTextEditor 
                         className="input-field w-full font-bold underline" 
-                        style={{textDecoration: 'underline', resize: 'none', overflow: 'hidden'}}
                         value={item.name} 
                         onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
                         placeholder="Enter Title..."
@@ -1298,7 +1400,7 @@ function App() {
               <tr key={t.id} className="transportation-row">
                 <td></td>
                 <td>
-                  <ExpandingTextarea className="input-field w-full" value={t.description} onChange={e => handleTransportChange(t.id, 'description', e.target.value)} placeholder="Transportation Charges..." />
+                  <RichTextEditor className="input-field w-full" value={t.description} onChange={e => handleTransportChange(t.id, 'description', e.target.value)} placeholder="Transportation Charges..." />
                 </td>
                 <td></td>
                 <td></td>
@@ -1306,8 +1408,12 @@ function App() {
                 <td></td>
                 <td></td>
                 <td className="text-right relative">
-                  <input type="number" className="input-field w-full text-right no-print" value={t.amount} onChange={e => handleTransportChange(t.id, 'amount', parseFloat(e.target.value) || 0)} />
-                  <span className="print-only text-right block">{(Number(t.amount) || 0).toFixed(2)}</span>
+                  {!t.isDescriptionOnly && (
+                    <>
+                      <input type="number" className="input-field w-full text-right no-print" value={t.amount} onChange={e => handleTransportChange(t.id, 'amount', parseFloat(e.target.value) || 0)} />
+                      <span className="print-only text-right block">{(Number(t.amount) || 0).toFixed(2)}</span>
+                    </>
+                  )}
                 </td>
                 <td className="no-print text-center">
                    <button onClick={() => removeTransport(t.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
@@ -1318,7 +1424,10 @@ function App() {
             <tr className="no-print">
               <td></td>
               <td className="text-center p-2">
-                <button onClick={addTransport} className="btn text-xs"><Plus size={14} /> Add Transport Charge</button>
+                <div className="flex justify-center gap-4">
+                  <button onClick={addTransport} className="btn text-xs"><Plus size={14} /> Add Transport Charge</button>
+                  <button onClick={addTransportDescription} className="btn text-xs"><Plus size={14} /> Add Transport Description</button>
+                </div>
               </td>
               <td></td>
               <td></td>
@@ -1348,26 +1457,29 @@ function App() {
           <div className="footer-left">
             <div className="bank-details text-xxs">
               <div className="bank-row">
-                <input className="input-field w-full font-bold py-0 text-xxs" value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
+                <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
               </div>
               <div className="bank-row">
-                <input className="input-field w-full py-0 text-xxs" value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
+                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
+              </div>
+              <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
+              <div className="bank-row">
+                <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
               </div>
               <div className="bank-row">
-                <input className="input-field w-full font-bold py-0 text-xxs" value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
-              </div>
-              <div className="bank-row">
-                <input className="input-field w-full py-0 text-xxs" value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
+                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
               </div>
             </div>
-            <div className="amount-in-words font-bold mb-1 mt-1 text-xxs">
+            <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
+            <div className="amount-in-words font-bold mb-1 mt-1 text-xs">
               Rs. {numberToWords(roundedTotal)}
             </div>
+            <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
             <div className="terms-conditions text-xxs text-gray-600">
-              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
-              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
-              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
-              <input className="input-field w-full py-0 text-xxs" value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
+              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
+              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
+              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
+              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
             </div>
             <div className="jurisdiction text-xxs mt-2">
               <p>E. & O.E.</p>
@@ -1375,52 +1487,51 @@ function App() {
             </div>
           </div>
           
-          <div className="footer-right border-l pl-4 text-xxs">
-            <div className="tax-calc-row">
-              <span>Total</span>
-              <span className="text-right">{taxableValue.toFixed(2)}</span>
-            </div>
-            <div className="tax-calc-row font-bold">
-              <span>Total Amount/Taxable Value :</span>
-              <span className="text-right">{taxableValue.toFixed(2)}</span>
-            </div>
-            {isInterState ? (
-              <div className="tax-calc-row">
-                <span className="flex items-center">Add : IGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={igstRate} readOnly />{' '}%</span>
-                <span className="text-right">{igst.toFixed(2)}</span>
+          <div className="footer-right border-l pl-1 flex text-xs" style={{flexDirection: 'column', minHeight: '200px'}}>
+            <div className="p-2 rounded w-full" style={{border: '1px solid #000'}}>
+              <div className="tax-calc-row font-bold">
+                <span>Total Amount/Taxable Value :</span>
+                <span className="text-right">{taxableValue.toFixed(2)}</span>
               </div>
-            ) : (
-              <>
+              {isInterState ? (
                 <div className="tax-calc-row">
-                  <span className="flex items-center">Add : CGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.cgstRate} onChange={e => handleConfigChange('taxInfo', 'cgstRate', parseFloat(e.target.value) || 0)} />%</span>
-                  <span className="text-right">{cgst.toFixed(2)}</span>
+                  <span className="flex items-center">Add : IGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={igstRate} readOnly />{' '}%</span>
+                  <span className="text-right">{igst.toFixed(2)}</span>
                 </div>
-                <div className="tax-calc-row">
-                  <span className="flex items-center">Add : SGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.sgstRate} onChange={e => handleConfigChange('taxInfo', 'sgstRate', parseFloat(e.target.value) || 0)} />%</span>
-                  <span className="text-right">{sgst.toFixed(2)}</span>
-                </div>
-              </>
-            )}
-            <div className="tax-calc-row">
-              <span className="flex items-center">
-                Round Off
-                <input 
-                  type="checkbox" 
-                  title="Enable Round Off"
-                  className="no-print ml-2" 
-                  checked={config.enableRoundOff !== false} 
-                  onChange={e => handleConfigChange(null, 'enableRoundOff', e.target.checked)} 
-                />
-              </span>
-              <span className="text-right">{roundOff.toFixed(2)}</span>
+              ) : (
+                <>
+                  <div className="tax-calc-row">
+                    <span className="flex items-center">Add : CGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.cgstRate} onChange={e => handleConfigChange('taxInfo', 'cgstRate', parseFloat(e.target.value) || 0)} />%</span>
+                    <span className="text-right">{cgst.toFixed(2)}</span>
+                  </div>
+                  <div className="tax-calc-row">
+                    <span className="flex items-center">Add : SGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.sgstRate} onChange={e => handleConfigChange('taxInfo', 'sgstRate', parseFloat(e.target.value) || 0)} />%</span>
+                    <span className="text-right">{sgst.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+              <div className="tax-calc-row">
+                <span className="flex items-center">
+                  Round Off
+                  <input 
+                    type="checkbox" 
+                    title="Enable Round Off"
+                    className="no-print ml-2" 
+                    checked={config.enableRoundOff !== false} 
+                    onChange={e => handleConfigChange(null, 'enableRoundOff', e.target.checked)} 
+                  />
+                </span>
+                <span className="text-right">{roundOff.toFixed(2)}</span>
+              </div>
+              <div className="tax-calc-row font-bold mt-1 pt-1" style={{borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px'}}>
+                <span>Total Amount After Tax :</span>
+                <span className="text-right">{roundedTotal.toFixed(2)}</span>
+              </div>
             </div>
-            <div className="tax-calc-row font-bold">
-              <span>Total Amount After Tax :</span>
-              <span className="text-right">{roundedTotal.toFixed(2)}</span>
-            </div>
-            <div className="signature-area text-right mt-2">
-              <p className="mb-2 text-xxs">for : Jain Advertising Agency</p>
-              <p className="text-xxs">Proprietor.</p>
+            
+            <div className="signature-area text-right mt-16 pt-4">
+              <p className="mb-6 text-xs font-bold">for : Jain Advertising Agency</p>
+              <p className="text-xs">Proprietor.</p>
             </div>
           </div>
         </div>

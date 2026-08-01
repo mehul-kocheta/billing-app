@@ -697,3 +697,10 @@ input[type="number"] {
     display: none !important;
   }
 }
+
+[contenteditable]:empty:before {
+  content: attr(placeholder);
+  color: #888;
+  pointer-events: none;
+  display: block;
+}

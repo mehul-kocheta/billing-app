@@ -744,3 +744,78 @@ input[type="number"] {
   pointer-events: none;
   display: block;
 }
+
+/* Party Autocomplete Dropdown */
+.party-autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background-color: #ffffff;
+  border: 1.5px solid #2563eb;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  margin-top: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.party-autocomplete-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+
+.party-autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.party-autocomplete-item:hover,
+.party-autocomplete-item.active {
+  background-color: #eff6ff;
+}
+
+.party-autocomplete-name {
+  font-weight: 700;
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.party-autocomplete-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: #64748b;
+  align-items: center;
+}
+
+.party-meta-gst {
+  background: #f1f5f9;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.party-meta-state {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.party-meta-addr {
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+

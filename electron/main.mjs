@@ -37,6 +37,54 @@ async function initDatabase() {
     )
   `);
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS parties (
+      name_key TEXT PRIMARY KEY,
+      name TEXT,
+      address TEXT,
+      pin TEXT,
+      gstin TEXT,
+      state TEXT,
+      state_code TEXT,
+      last_used INTEGER
+    )
+  `);
+
+  // Seed parties cache from invoices if parties table is empty
+  try {
+    const partyCount = await db.get('SELECT COUNT(*) as count FROM parties');
+    if (partyCount && partyCount.count === 0) {
+      const invoiceRows = await db.all('SELECT full_data, timestamp FROM invoices ORDER BY timestamp ASC');
+      for (const row of invoiceRows) {
+        try {
+          const inv = JSON.parse(row.full_data);
+          const d = inv.invoiceData || {};
+          if (d.billToName && d.billToName.trim()) {
+            const key = d.billToName.trim().toLowerCase();
+            await db.run(`
+              INSERT OR REPLACE INTO parties (name_key, name, address, pin, gstin, state, state_code, last_used)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              key,
+              d.billToName.trim(),
+              d.billToAddress || '',
+              d.billToPin || '',
+              d.billToGst || '',
+              d.billToState || '',
+              d.billToStateCode || '',
+              row.timestamp || Date.now()
+            ]);
+          }
+        } catch (e) {
+          // ignore individual json parse error
+        }
+      }
+      console.log('Successfully seeded parties table from existing invoices');
+    }
+  } catch (err) {
+    console.error('Failed to seed parties table:', err);
+  }
+
   // Migration from JSON to SQLite
   if (fs.existsSync(historyPath)) {
     try {
@@ -195,6 +243,25 @@ ipcMain.handle('save-invoice', async (event, inv) => {
       search,
       JSON.stringify(inv)
     ]);
+
+    // Upsert into parties table to cache client details
+    if (d.billToName && d.billToName.trim()) {
+      const key = d.billToName.trim().toLowerCase();
+      await db.run(`
+        INSERT OR REPLACE INTO parties (name_key, name, address, pin, gstin, state, state_code, last_used)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        key,
+        d.billToName.trim(),
+        d.billToAddress || '',
+        d.billToPin || '',
+        d.billToGst || '',
+        d.billToState || '',
+        d.billToStateCode || '',
+        Date.now()
+      ]);
+    }
+
     return { success: true, id: targetId };
   } catch (err) {
     console.error('Failed to save invoice:', err);
@@ -218,6 +285,26 @@ ipcMain.handle('get-all-history', async () => {
     return rows.map(r => JSON.parse(r.full_data));
   } catch (err) {
     console.error('Failed to get all history:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('get-parties', async (event, query) => {
+  try {
+    if (query && query.trim()) {
+      const search = `%${query.trim().toLowerCase()}%`;
+      const rows = await db.all(`
+        SELECT * FROM parties 
+        WHERE LOWER(name) LIKE ? OR LOWER(gstin) LIKE ? 
+        ORDER BY last_used DESC LIMIT 20
+      `, [search, search]);
+      return rows;
+    } else {
+      const rows = await db.all('SELECT * FROM parties ORDER BY last_used DESC LIMIT 50');
+      return rows;
+    }
+  } catch (err) {
+    console.error('Failed to get parties:', err);
     return [];
   }
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Plus, Trash2, Printer, Settings, ArrowLeft, Save, FileText, History, Search, BarChart3, Calendar, Download, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -156,6 +156,148 @@ const AutocompleteTextarea = ({ value, onChange, onSelect, options, ...props }) 
   );
 };
 
+const GST_STATE_MAP = {
+  '01': 'Jammu & Kashmir',
+  '02': 'Himachal Pradesh',
+  '03': 'Punjab',
+  '04': 'Chandigarh',
+  '05': 'Uttarakhand',
+  '06': 'Haryana',
+  '07': 'Delhi',
+  '08': 'Rajasthan',
+  '09': 'Uttar Pradesh',
+  '10': 'Bihar',
+  '11': 'Sikkim',
+  '12': 'Arunachal Pradesh',
+  '13': 'Nagaland',
+  '14': 'Manipur',
+  '15': 'Mizoram',
+  '16': 'Tripura',
+  '17': 'Meghalaya',
+  '18': 'Assam',
+  '19': 'West Bengal',
+  '20': 'Jharkhand',
+  '21': 'Odisha',
+  '22': 'Chhattisgarh',
+  '23': 'Madhya Pradesh',
+  '24': 'Gujarat',
+  '26': 'Dadra & Nagar Haveli and Daman & Diu',
+  '27': 'Maharashtra',
+  '28': 'Andhra Pradesh',
+  '29': 'Karnataka',
+  '30': 'Goa',
+  '31': 'Lakshadweep',
+  '32': 'Kerala',
+  '33': 'Tamil Nadu',
+  '34': 'Puducherry',
+  '35': 'Andaman & Nicobar Islands',
+  '36': 'Telangana',
+  '37': 'Andhra Pradesh (New)',
+  '38': 'Ladakh'
+};
+
+const PartyAutocompleteInput = ({ value, onChange, onSelectParty, parties = [] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const wrapperRef = useRef(null);
+
+  const query = (value || '').trim().toLowerCase();
+
+  const matches = useMemo(() => {
+    if (!query) {
+      return parties.slice(0, 8);
+    }
+    return parties
+      .filter(p => {
+        const nameMatch = p.name && p.name.toLowerCase().includes(query);
+        const gstMatch = p.gstin && p.gstin.toLowerCase().includes(query);
+        return nameMatch || gstMatch;
+      })
+      .slice(0, 8);
+  }, [query, parties]);
+
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [matches]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (party) => {
+    onSelectParty(party);
+    setIsOpen(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isOpen || matches.length === 0) {
+      if (e.key === 'ArrowDown') {
+        setIsOpen(true);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(prev => (prev < matches.length - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(prev => (prev > 0 ? prev - 1 : matches.length - 1));
+    } else if (e.key === 'Enter') {
+      if (activeIndex >= 0 && matches[activeIndex]) {
+        e.preventDefault();
+        handleSelect(matches[activeIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative', flex: 1, width: '100%' }}>
+      <input
+        className="input-field font-bold"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder="Party Name"
+        autoComplete="off"
+      />
+      {isOpen && matches.length > 0 && (
+        <div className="party-autocomplete-dropdown no-print">
+          {matches.map((p, idx) => (
+            <div
+              key={p.name_key || p.name + idx}
+              className={`party-autocomplete-item ${idx === activeIndex ? 'active' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelect(p);
+              }}
+            >
+              <div className="party-autocomplete-name">{p.name}</div>
+              <div className="party-autocomplete-meta">
+                {p.gstin ? <span className="party-meta-gst">GST: {p.gstin}</span> : <span className="party-meta-gst" style={{opacity: 0.6}}>Unregistered</span>}
+                {p.state && <span className="party-meta-state">{p.state} ({p.state_code || ''})</span>}
+                {p.address && <span className="party-meta-addr">{p.address.replace(/\n/g, ', ').slice(0, 45)}{p.address.length > 45 ? '...' : ''}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const DEFAULT_CONFIG = {
   topMargin: 5,
   companyStateCode: '23',
@@ -239,6 +381,7 @@ function parseSizeToSqFt(sizeStr) {
 function App() {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [historyData, setHistoryData] = useState([]);
+  const [parties, setParties] = useState([]);
   const [historyTotalPages, setHistoryTotalPages] = useState(1);
   const [historyCurrentPage, setHistoryCurrentPage] = useState(1);
   const [allHistoryForReport, setAllHistoryForReport] = useState([]);
@@ -292,12 +435,46 @@ function App() {
 
       if (window.electronAPI) {
         savedConfig = await window.electronAPI.readConfig();
+        try {
+          const partyList = await window.electronAPI.getParties();
+          if (Array.isArray(partyList)) setParties(partyList);
+        } catch (e) {
+          console.error("Failed to load parties from SQLite", e);
+        }
       } else {
         try {
           const localConfig = localStorage.getItem('billing_config');
           if (localConfig) savedConfig = JSON.parse(localConfig);
           const localHistory = localStorage.getItem('billing_history');
           if (localHistory) setHistoryData(JSON.parse(localHistory));
+          const localParties = localStorage.getItem('billing_parties');
+          if (localParties) {
+            setParties(JSON.parse(localParties));
+          } else if (localHistory) {
+            const hist = JSON.parse(localHistory);
+            const partyMap = new Map();
+            for (const rec of hist) {
+              const d = rec.invoiceData;
+              if (d && d.billToName && d.billToName.trim()) {
+                const k = d.billToName.trim().toLowerCase();
+                if (!partyMap.has(k)) {
+                  partyMap.set(k, {
+                    name_key: k,
+                    name: d.billToName.trim(),
+                    address: d.billToAddress || '',
+                    pin: d.billToPin || '',
+                    gstin: d.billToGst || '',
+                    state: d.billToState || '',
+                    state_code: d.billToStateCode || '',
+                    last_used: rec.timestamp || Date.now()
+                  });
+                }
+              }
+            }
+            const seeded = Array.from(partyMap.values());
+            setParties(seeded);
+            localStorage.setItem('billing_parties', JSON.stringify(seeded));
+          }
         } catch (e) {
           console.error("Failed to read from localStorage", e);
         }
@@ -405,7 +582,35 @@ function App() {
   };
 
   const handleInvoiceChange = (field, value) => {
-    setInvoiceData(prev => ({ ...prev, [field]: value }));
+    setInvoiceData(prev => {
+      const updated = { ...prev, [field]: value };
+      if (field === 'billToGst') {
+        const cleanGst = value.trim().toUpperCase();
+        updated.billToGst = cleanGst;
+        if (cleanGst.length >= 2) {
+          const code = cleanGst.slice(0, 2);
+          if (GST_STATE_MAP[code]) {
+            if (!prev.billToStateCode || prev.billToStateCode === prev.billToGst?.slice(0, 2)) {
+              updated.billToStateCode = code;
+              updated.billToState = GST_STATE_MAP[code];
+            }
+          }
+        }
+      }
+      return updated;
+    });
+  };
+
+  const handleSelectParty = (party) => {
+    setInvoiceData(prev => ({
+      ...prev,
+      billToName: party.name || '',
+      billToAddress: party.address || '',
+      billToPin: party.pin || '',
+      billToGst: party.gstin || '',
+      billToState: party.state || '',
+      billToStateCode: party.state_code || ''
+    }));
   };
 
   const getHsnForProduct = (prodName) => {
@@ -603,6 +808,12 @@ function App() {
       const res = await window.electronAPI.saveInvoice(newBillRec);
       if (res && res.id) setEditingInvoiceId(res.id);
       else setEditingInvoiceId(idToSave);
+
+      // Refresh in-memory parties cache
+      if (invoiceData.billToName && invoiceData.billToName.trim()) {
+        const pList = await window.electronAPI.getParties();
+        if (Array.isArray(pList)) setParties(pList);
+      }
       showToast('Invoice saved successfully!');
     } else {
       let newHistory;
@@ -616,6 +827,24 @@ function App() {
       setEditingInvoiceId(idToSave);
       setHistoryData(newHistory);
       localStorage.setItem('billing_history', JSON.stringify(newHistory));
+
+      // Cache party in localStorage
+      if (invoiceData.billToName && invoiceData.billToName.trim()) {
+        const partyObj = {
+          name_key: invoiceData.billToName.trim().toLowerCase(),
+          name: invoiceData.billToName.trim(),
+          address: invoiceData.billToAddress || '',
+          pin: invoiceData.billToPin || '',
+          gstin: invoiceData.billToGst || '',
+          state: invoiceData.billToState || '',
+          state_code: invoiceData.billToStateCode || '',
+          last_used: Date.now()
+        };
+        const updatedParties = [partyObj, ...parties.filter(p => p.name_key !== partyObj.name_key)];
+        setParties(updatedParties);
+        localStorage.setItem('billing_parties', JSON.stringify(updatedParties));
+      }
+
       showToast('Invoice saved locally!');
     }
   };
@@ -1291,7 +1520,12 @@ function App() {
             <div className="bill-to">
               <div className="grid-row">
                 <label>Name</label><span>:</span>
-                <input className="input-field font-bold" value={invoiceData.billToName} onChange={e => handleInvoiceChange('billToName', e.target.value)} />
+                <PartyAutocompleteInput
+                  value={invoiceData.billToName}
+                  onChange={val => handleInvoiceChange('billToName', val)}
+                  onSelectParty={handleSelectParty}
+                  parties={parties}
+                />
               </div>
               <div className="grid-row">
                 <label>Address</label><span>:</span>

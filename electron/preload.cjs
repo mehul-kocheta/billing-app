@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveInvoice: (data) => ipcRenderer.invoke('save-invoice', data),
   deleteInvoice: (id) => ipcRenderer.invoke('delete-invoice', id),
   getAllHistory: () => ipcRenderer.invoke('get-all-history'),
+  getParties: (query) => ipcRenderer.invoke('get-parties', query),
 });

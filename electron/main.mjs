@@ -172,11 +172,20 @@ ipcMain.handle('save-invoice', async (event, inv) => {
     const d = inv.invoiceData || {};
     const search = [d.billToName, d.billToAddress, d.invoiceDate, d.invoiceNo, d.documentType === 'credit-note' ? 'credit note' : '', d.referenceInvoiceNo].filter(Boolean).join(' ').toLowerCase();
     
+    let targetId = inv.id;
+    if (d.invoiceNo && d.invoiceNo.trim()) {
+      const existingByNo = await db.get('SELECT id FROM invoices WHERE invoice_no = ?', d.invoiceNo.trim());
+      if (existingByNo && existingByNo.id) {
+        targetId = existingByNo.id;
+        inv.id = targetId;
+      }
+    }
+
     await db.run(`
       INSERT OR REPLACE INTO invoices (id, timestamp, invoice_no, client_name, client_address, invoice_date, total_amount, search_text, full_data) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      inv.id,
+      targetId,
       inv.timestamp || Date.now(),
       d.invoiceNo || '',
       d.billToName || '',
@@ -186,7 +195,7 @@ ipcMain.handle('save-invoice', async (event, inv) => {
       search,
       JSON.stringify(inv)
     ]);
-    return { success: true };
+    return { success: true, id: targetId };
   } catch (err) {
     console.error('Failed to save invoice:', err);
     return { success: false, error: err.message };

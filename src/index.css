@@ -235,16 +235,25 @@ input[type="number"] {
   margin: 10px 0;
 }
 
+.bill-frame {
+  border: 1.5px solid var(--border-color);
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
 .invoice-meta-row {
   display: flex;
-  border: 1px solid var(--border-color);
-  border-bottom: none;
+  border: none;
+  border-bottom: 1.5px solid var(--border-color);
 }
 
 .bill-to {
   flex: 1;
   padding: 4px 10px;
-  border-right: 1px solid var(--border-color);
+  border-right: 1.5px solid var(--border-color);
 }
 
 .invoice-details {
@@ -282,26 +291,36 @@ input[type="number"] {
 .invoice-table {
   width: 100%;
   border-collapse: collapse;
-  border: 1px solid var(--border-color);
+  border: none;
+  border-bottom: 1.5px solid var(--border-color);
   table-layout: fixed;
   flex-grow: 1;
+  height: 100%;
 }
 
 .invoice-table th {
-  border: 1px solid var(--border-color);
+  border: none;
+  border-bottom: 1.5px solid var(--border-color);
+  border-right: 1.5px solid var(--border-color);
   padding: 4px;
   background-color: transparent;
   font-weight: 600;
   text-align: center;
 }
 
+.invoice-table th:last-child {
+  border-right: none;
+}
+
 .invoice-table td {
-  border-left: 1px solid var(--border-color);
-  border-right: 1px solid var(--border-color);
-  border-top: none;
-  border-bottom: none;
+  border: none;
+  border-right: 1.5px solid var(--border-color);
   padding: 4px;
   vertical-align: top;
+}
+
+.invoice-table td:last-child {
+  border-right: none;
 }
 
 .transportation-row td {
@@ -315,8 +334,8 @@ input[type="number"] {
 /* Footer */
 .invoice-footer {
   display: flex;
-  border: 1px solid var(--border-color);
-  border-top: none;
+  border: none;
+  margin-top: auto;
   page-break-inside: avoid;
   break-inside: avoid;
 }
@@ -324,7 +343,7 @@ input[type="number"] {
 .footer-left {
   flex: 1;
   padding: 4px 10px;
-  border-right: 1px solid var(--border-color);
+  border-right: 1.5px solid var(--border-color);
 }
 
 .footer-right {
@@ -448,6 +467,27 @@ input[type="number"] {
     border: none;
     padding: 0;
     min-height: calc(99vh - var(--top-margin, 0cm));
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .bill-frame {
+    border: 1.5px solid #000000 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex-grow: 1 !important;
+  }
+  .invoice-table {
+    flex-grow: 1 !important;
+    height: 100% !important;
+  }
+  .invoice-footer {
+    margin-top: auto !important;
+  }
+  .invoice-table th:nth-last-child(2),
+  .invoice-table td:nth-last-child(2) {
+    border-right: none;
   }
   .no-print {
     display: none !important;
@@ -631,8 +671,8 @@ input[type="number"] {
   justify-content: space-between;
   align-items: center;
   padding: 4px 10px;
-  border: 1px solid var(--border-color);
-  border-bottom: none;
+  border: none;
+  border-bottom: 1.5px solid var(--border-color);
 }
 
 .doc-type-title {

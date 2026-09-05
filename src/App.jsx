@@ -176,13 +176,14 @@ const DEFAULT_CONFIG = {
   taxInfo: {
     cgstRate: 9,
     sgstRate: 9,
+    defaultGstRate: 18,
   },
   productHsnMapping: [
-    { id: uuidv4(), product: 'New FL Board with Print', hsn: '3919' },
-    { id: uuidv4(), product: 'New S/S BL Board with Print', hsn: '9405' },
-    { id: uuidv4(), product: 'New D/S BL Pole Board with Print', hsn: '9405' },
-    { id: uuidv4(), product: 'New D/S BL Standee with Print', hsn: '9405' },
-    { id: uuidv4(), product: 'Machine Sticker', hsn: '3919' }
+    { id: uuidv4(), product: 'New FL Board with Print', hsn: '3919', gstRate: 18 },
+    { id: uuidv4(), product: 'New S/S BL Board with Print', hsn: '9405', gstRate: 18 },
+    { id: uuidv4(), product: 'New D/S BL Pole Board with Print', hsn: '9405', gstRate: 18 },
+    { id: uuidv4(), product: 'New D/S BL Standee with Print', hsn: '9405', gstRate: 18 },
+    { id: uuidv4(), product: 'Machine Sticker', hsn: '3919', gstRate: 18 }
   ],
   enableRoundOff: true
 };
@@ -241,6 +242,7 @@ function App() {
   const [historyTotalPages, setHistoryTotalPages] = useState(1);
   const [historyCurrentPage, setHistoryCurrentPage] = useState(1);
   const [allHistoryForReport, setAllHistoryForReport] = useState([]);
+  const [editingInvoiceId, setEditingInvoiceId] = useState(null);
   const HISTORY_LIMIT = 15;
   const [currentView, setCurrentView] = useState('invoice'); // 'invoice' | 'settings' | 'history' | 'gst-report'
   const [gstTab, setGstTab] = useState('b2b'); // 'b2b' | 'b2c' | 'credit-notes' | 'hsn'
@@ -277,11 +279,11 @@ function App() {
   const [items, setItems] = useState([
     { id: uuidv4(), type: 'title', name: 'Supply of FL & BL Boards' },
     { id: uuidv4(), type: 'title', name: 'For Sagar (WOD296)' },
-    { id: uuidv4(), type: 'item', name: 'New FL Board with Print', hsn: '3919', size: "6'x3'", sqft: 540, qty: 30, rate: 41 },
+    { id: uuidv4(), type: 'item', name: 'New FL Board with Print', hsn: '3919', size: "6'x3'", sqft: 540, qty: 30, rate: 41, gstRate: 18 },
   ]);
 
   const [transportation, setTransportation] = useState([
-    { id: uuidv4(), description: 'Transportation Charges from Jabalpur to Sagar Jabalpur', amount: 20375 }
+    { id: uuidv4(), description: 'Transportation Charges from Jabalpur to Sagar Jabalpur', amount: '20375.00', gstRate: 18 }
   ]);
 
   useEffect(() => {
@@ -304,7 +306,9 @@ function App() {
       if (savedConfig) {
         // Object format migration for mappings if needed
         if (savedConfig.productHsnMapping && !Array.isArray(savedConfig.productHsnMapping)) {
-           savedConfig.productHsnMapping = Object.entries(savedConfig.productHsnMapping).map(([k,v]) => ({id: uuidv4(), product: k, hsn: v}));
+           savedConfig.productHsnMapping = Object.entries(savedConfig.productHsnMapping).map(([k,v]) => ({id: uuidv4(), product: k, hsn: v, gstRate: 18}));
+        } else if (Array.isArray(savedConfig.productHsnMapping)) {
+           savedConfig.productHsnMapping = savedConfig.productHsnMapping.map(m => ({ ...m, gstRate: m.gstRate !== undefined ? m.gstRate : 18 }));
         }
         const merged = { ...DEFAULT_CONFIG };
         for (let key in savedConfig) {
@@ -389,7 +393,7 @@ function App() {
   const addMapping = () => {
     setConfig(prev => ({
       ...prev,
-      productHsnMapping: [...prev.productHsnMapping, { id: uuidv4(), product: '', hsn: '' }]
+      productHsnMapping: [...prev.productHsnMapping, { id: uuidv4(), product: '', hsn: '', gstRate: 18 }]
     }));
   };
 
@@ -414,9 +418,13 @@ function App() {
       if (item.id === id) {
         const newItem = { ...item, [field]: value };
         
-        // Auto-fill HSN
-        if (field === 'name' && getHsnForProduct(value) && item.type === 'item') {
-          newItem.hsn = getHsnForProduct(value);
+        // Auto-fill HSN and GST Rate
+        if (field === 'name' && item.type === 'item') {
+          const mapping = config.productHsnMapping.find(m => m.product === value);
+          if (mapping) {
+            if (mapping.hsn) newItem.hsn = mapping.hsn;
+            if (mapping.gstRate !== undefined) newItem.gstRate = mapping.gstRate;
+          }
         }
 
         // Auto-calculate SqFt if size or qty changes
@@ -434,7 +442,7 @@ function App() {
   };
 
   const addItem = () => {
-    setItems(prev => [...prev, { id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: 0, qty: 1, rate: 0 }]);
+    setItems(prev => [...prev, { id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: 0, qty: 1, rate: 0, gstRate: 18 }]);
   };
 
   const addTitle = () => {
@@ -446,11 +454,11 @@ function App() {
   };
 
   const addTransport = () => {
-    setTransportation(prev => [...prev, { id: uuidv4(), description: '', amount: 0 }]);
+    setTransportation(prev => [...prev, { id: uuidv4(), description: '', amount: '0.00', gstRate: 18 }]);
   };
 
   const addTransportDescription = () => {
-    setTransportation(prev => [...prev, { id: uuidv4(), description: '', amount: 0, isDescriptionOnly: true }]);
+    setTransportation(prev => [...prev, { id: uuidv4(), description: '', amount: '0.00', isDescriptionOnly: true, gstRate: 0 }]);
   };
 
   const removeTransport = (id) => {
@@ -470,6 +478,7 @@ function App() {
   };
 
   const newBill = async () => {
+    setEditingInvoiceId(null);
     let nextNo = '';
     if (window.electronAPI) {
        const all = await window.electronAPI.getAllHistory();
@@ -490,7 +499,7 @@ function App() {
       documentType: 'invoice',
       referenceInvoiceNo: '',
     });
-    setItems([{ id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: 0, qty: 1, rate: 0 }]);
+    setItems([{ id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: 0, qty: 1, rate: 0, gstRate: 18 }]);
     setTransportation([]);
   };
 
@@ -509,21 +518,72 @@ function App() {
 
   // IGST detection: inter-state if billToStateCode differs from company's
   const isInterState = invoiceData.billToStateCode && config.companyStateCode && invoiceData.billToStateCode !== config.companyStateCode;
-  const cgstRate = config.taxInfo.cgstRate || 0;
-  const sgstRate = config.taxInfo.sgstRate || 0;
-  const igstRate = cgstRate + sgstRate;
-  const cgst = isInterState ? 0 : taxableValue * (cgstRate / 100);
-  const sgst = isInterState ? 0 : taxableValue * (sgstRate / 100);
-  const igst = isInterState ? taxableValue * (igstRate / 100) : 0;
-  const totalAfterTax = taxableValue + cgst + sgst + igst;
+
+  // Group taxable amounts by GST rate
+  const rateBuckets = {};
+  items.forEach(item => {
+    if (item.type === 'title') return;
+    const rateVal = item.gstRate !== undefined ? Number(item.gstRate) : 18;
+    const amt = calculateItemTotal(item);
+    rateBuckets[rateVal] = (rateBuckets[rateVal] || 0) + amt;
+  });
+
+  transportation.forEach(t => {
+    if (t.isDescriptionOnly) return;
+    const amt = Number(t.amount) || 0;
+    if (amt <= 0) return;
+    const rateVal = t.gstRate !== undefined ? Number(t.gstRate) : 18;
+    rateBuckets[rateVal] = (rateBuckets[rateVal] || 0) + amt;
+  });
+
+  const activeRates = Object.keys(rateBuckets).map(Number).sort((a, b) => a - b);
+  let totalCgst = 0;
+  let totalSgst = 0;
+  let totalIgst = 0;
+
+  const taxSlabs = activeRates.map(rate => {
+    const bucketTaxable = rateBuckets[rate] || 0;
+    const cgstRate = rate / 2;
+    const sgstRate = rate / 2;
+    const igstRate = rate;
+    const cgstAmt = isInterState ? 0 : bucketTaxable * (cgstRate / 100);
+    const sgstAmt = isInterState ? 0 : bucketTaxable * (sgstRate / 100);
+    const igstAmt = isInterState ? bucketTaxable * (igstRate / 100) : 0;
+    
+    totalCgst += cgstAmt;
+    totalSgst += sgstAmt;
+    totalIgst += igstAmt;
+
+    return {
+      rate,
+      taxable: bucketTaxable,
+      cgstRate,
+      sgstRate,
+      igstRate,
+      cgstAmt,
+      sgstAmt,
+      igstAmt
+    };
+  });
+
+  const totalAfterTax = taxableValue + totalCgst + totalSgst + totalIgst;
   const isRoundOff = config.enableRoundOff !== false;
   const roundedTotal = isRoundOff ? Math.round(totalAfterTax) : totalAfterTax;
   const roundOff = isRoundOff ? roundedTotal - totalAfterTax : 0;
 
   const saveToHistory = async () => {
     const invoiceKey = invoiceData.invoiceNo?.trim();
+    let idToSave = editingInvoiceId;
+    if (!idToSave) {
+      if (invoiceKey && historyData) {
+        const found = historyData.find(h => h.invoiceData?.invoiceNo?.trim() === invoiceKey);
+        if (found) idToSave = found.id;
+      }
+    }
+    if (!idToSave) idToSave = uuidv4();
+
     const newBillRec = {
-      id: uuidv4(),
+      id: idToSave,
       timestamp: Date.now(),
       totalAmount: roundedTotal,
       invoiceData,
@@ -531,25 +591,29 @@ function App() {
       transportation,
       taxBreakdown: {
         taxableValue,
-        cgst,
-        sgst,
-        igst,
-        isInterState
+        cgst: totalCgst,
+        sgst: totalSgst,
+        igst: totalIgst,
+        isInterState,
+        taxSlabs
       }
     };
 
     if (window.electronAPI) {
-      await window.electronAPI.saveInvoice(newBillRec);
+      const res = await window.electronAPI.saveInvoice(newBillRec);
+      if (res && res.id) setEditingInvoiceId(res.id);
+      else setEditingInvoiceId(idToSave);
       showToast('Invoice saved successfully!');
     } else {
       let newHistory;
-      const existingIdx = invoiceKey ? historyData.findIndex(h => h.invoiceData?.invoiceNo?.trim() === invoiceKey) : -1;
+      const existingIdx = historyData.findIndex(h => h.id === idToSave || (invoiceKey && h.invoiceData?.invoiceNo?.trim() === invoiceKey));
       if (existingIdx >= 0) {
         newHistory = [...historyData];
         newHistory[existingIdx] = { ...newBillRec, id: historyData[existingIdx].id };
       } else {
         newHistory = [newBillRec, ...historyData];
       }
+      setEditingInvoiceId(idToSave);
       setHistoryData(newHistory);
       localStorage.setItem('billing_history', JSON.stringify(newHistory));
       showToast('Invoice saved locally!');
@@ -558,6 +622,7 @@ function App() {
 
   const loadFromHistory = (rec) => {
     const cloned = JSON.parse(JSON.stringify(rec));
+    setEditingInvoiceId(rec.id);
     setInvoiceData({
       billToName: '',
       billToAddress: '',
@@ -572,8 +637,8 @@ function App() {
       referenceInvoiceNo: '',
       ...cloned.invoiceData
     });
-    setItems((cloned.items || []).map(item => ({ ...item, type: item.type || 'item', id: uuidv4() })));
-    setTransportation((cloned.transportation || []).map(t => ({ ...t, id: uuidv4() })));
+    setItems((cloned.items || []).map(item => ({ ...item, type: item.type || 'item', gstRate: item.gstRate !== undefined ? item.gstRate : 18, id: uuidv4() })));
+    setTransportation((cloned.transportation || []).map(t => ({ ...t, amount: t.amount !== undefined ? String(t.amount) : '0.00', gstRate: t.gstRate !== undefined ? t.gstRate : 18, id: uuidv4() })));
     setCurrentView('invoice');
   };
 
@@ -640,7 +705,7 @@ function App() {
 
           <div className="settings-section mt-4">
             <h3>Product to HSN Mapping</h3>
-            <p>Edit mappings so HSN codes auto-fill when you type a product name.</p>
+            <p>Edit mappings so HSN codes and GST rates auto-fill when you type a product name.</p>
             <div className="mapping-list">
               {config.productHsnMapping.map((m) => (
                 <div key={m.id} className="mapping-row flex items-center mb-2">
@@ -653,9 +718,21 @@ function App() {
                   <input 
                     value={m.hsn} 
                     onChange={e => handleMappingChange(m.id, 'hsn', e.target.value)} 
-                    className="input-field border w-1/3 ml-2" 
+                    className="input-field border w-1/4 ml-2" 
                     placeholder="HSN Code"
                   />
+                  <select 
+                    value={m.gstRate !== undefined ? m.gstRate : 18} 
+                    onChange={e => handleMappingChange(m.id, 'gstRate', Number(e.target.value))} 
+                    className="input-field border w-28 ml-2"
+                    title="GST Rate"
+                  >
+                    <option value={0}>0% GST</option>
+                    <option value={5}>5% GST</option>
+                    <option value={12}>12% GST</option>
+                    <option value={18}>18% GST</option>
+                    <option value={28}>28% GST</option>
+                  </select>
                   <button onClick={() => removeMapping(m.id)} className="btn icon-btn text-red ml-2"><Trash2 size={16}/></button>
                 </div>
               ))}
@@ -805,14 +882,15 @@ function App() {
     const hsnTotals = {};
     for (const rec of filteredRecs) {
       const isInterState = rec.taxBreakdown ? rec.taxBreakdown.isInterState : (rec.invoiceData?.billToStateCode && config.companyStateCode && rec.invoiceData?.billToStateCode !== config.companyStateCode);
-      
-      const cgstRate = config.taxInfo.cgstRate || 0;
-      const sgstRate = config.taxInfo.sgstRate || 0;
-      const igstRate = cgstRate + sgstRate;
 
       for(const item of rec.items || []) {
          if (item.type === 'title') continue;
          const hsn = item.hsn || 'No HSN';
+         const itemRate = item.gstRate !== undefined ? Number(item.gstRate) : ((config.taxInfo.cgstRate || 9) + (config.taxInfo.sgstRate || 9));
+         const cgstRate = itemRate / 2;
+         const sgstRate = itemRate / 2;
+         const igstRate = itemRate;
+
          const taxable = item.sqft > 0 ? item.sqft * item.rate : item.qty * item.rate;
          if (!hsnTotals[hsn]) hsnTotals[hsn] = { hsn, taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
          
@@ -827,18 +905,24 @@ function App() {
          hsnTotals[hsn].total += (taxable + itemCgst + itemSgst + itemIgst);
       }
       
-      const transTotal = (rec.transportation || []).reduce((s, t) => s + (Number(t.amount) || 0), 0);
-      if (transTotal > 0) {
+      for (const t of rec.transportation || []) {
+         if (t.isDescriptionOnly) continue;
+         const transAmt = Number(t.amount) || 0;
+         if (transAmt <= 0) continue;
+         const tRate = t.gstRate !== undefined ? Number(t.gstRate) : 18;
+         const cgstRate = tRate / 2;
+         const sgstRate = tRate / 2;
+         const igstRate = tRate;
          const hsn = 'Transport';
          if (!hsnTotals[hsn]) hsnTotals[hsn] = { hsn, taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
-         const itemCgst = isInterState ? 0 : transTotal * (cgstRate / 100);
-         const itemSgst = isInterState ? 0 : transTotal * (sgstRate / 100);
-         const itemIgst = isInterState ? transTotal * (igstRate / 100) : 0;
-         hsnTotals[hsn].taxable += transTotal;
+         const itemCgst = isInterState ? 0 : transAmt * (cgstRate / 100);
+         const itemSgst = isInterState ? 0 : transAmt * (sgstRate / 100);
+         const itemIgst = isInterState ? transAmt * (igstRate / 100) : 0;
+         hsnTotals[hsn].taxable += transAmt;
          hsnTotals[hsn].cgst += itemCgst;
          hsnTotals[hsn].sgst += itemSgst;
          hsnTotals[hsn].igst += itemIgst;
-         hsnTotals[hsn].total += (transTotal + itemCgst + itemSgst + itemIgst);
+         hsnTotals[hsn].total += (transAmt + itemCgst + itemSgst + itemIgst);
       }
     }
     const hsnData = Object.values(hsnTotals);
@@ -1194,344 +1278,409 @@ function App() {
             </button>
           </div>
         </div>
-        <div className="doc-type-label">
-          <div className="doc-type-meta">Pan No. :- {config.companyPan || ''}</div>
-          <div className="doc-type-title">{invoiceData.documentType === 'credit-note' ? 'CREDIT NOTE' : 'TAX INVOICE'}</div>
-          <div className="doc-type-meta">GSTN :- {config.companyGst || ''}</div>
-        </div>
-
-        {/* Bill To & Invoice Meta */}
-        <div className="invoice-meta-row">
-          <div className="bill-to">
-            <div className="grid-row">
-              <label>Name</label><span>:</span>
-              <input className="input-field font-bold" value={invoiceData.billToName} onChange={e => handleInvoiceChange('billToName', e.target.value)} />
-            </div>
-            <div className="grid-row">
-              <label>Address</label><span>:</span>
-              <textarea className="input-field" value={invoiceData.billToAddress} onChange={e => handleInvoiceChange('billToAddress', e.target.value)} />
-            </div>
-            <div className="grid-row">
-              <label>Pin Code</label><span>:</span>
-              <input className="input-field" value={invoiceData.billToPin} onChange={e => handleInvoiceChange('billToPin', e.target.value)} />
-            </div>
-            <div className="grid-row">
-              <label>GSTIN</label><span>:</span>
-              <input className="input-field font-bold" value={invoiceData.billToGst} onChange={e => handleInvoiceChange('billToGst', e.target.value)} />
-            </div>
-            <div className="grid-row">
-              <label>State</label><span>:</span>
-              <div className="flex-row w-full">
-                <input className="input-field flex-grow" value={invoiceData.billToState} onChange={e => handleInvoiceChange('billToState', e.target.value)} />
-                <span className="state-code-label">State Code :</span>
-                <input className="input-field w-16 text-center" value={invoiceData.billToStateCode} onChange={e => handleInvoiceChange('billToStateCode', e.target.value)} />
-              </div>
-            </div>
+        {/* Outer Bill Frame for uniform borders */}
+        <div className="bill-frame">
+          <div className="doc-type-label">
+            <div className="doc-type-meta">Pan No. :- {config.companyPan || ''}</div>
+            <div className="doc-type-title">{invoiceData.documentType === 'credit-note' ? 'CREDIT NOTE' : 'TAX INVOICE'}</div>
+            <div className="doc-type-meta">GSTN :- {config.companyGst || ''}</div>
           </div>
-          <div className="invoice-details">
-            <div className="grid-row">
-              <label>{invoiceData.documentType === 'credit-note' ? 'Credit Note No.' : 'Invoice No.'}</label><span>:</span>
-              <input className="input-field" value={invoiceData.invoiceNo} onChange={e => handleInvoiceChange('invoiceNo', e.target.value)} />
-            </div>
-            {invoiceData.documentType === 'credit-note' && (
+
+          {/* Bill To & Invoice Meta */}
+          <div className="invoice-meta-row">
+            <div className="bill-to">
               <div className="grid-row">
-                <label>Ref. Inv. No.</label><span>:</span>
-                <input className="input-field" value={invoiceData.referenceInvoiceNo} onChange={e => handleInvoiceChange('referenceInvoiceNo', e.target.value)} placeholder="Original Invoice No." />
+                <label>Name</label><span>:</span>
+                <input className="input-field font-bold" value={invoiceData.billToName} onChange={e => handleInvoiceChange('billToName', e.target.value)} />
               </div>
-            )}
-            <div className="grid-row">
-              <label>Date</label><span>:</span>
-              <input className="input-field" value={invoiceData.invoiceDate} onChange={e => handleInvoiceChange('invoiceDate', e.target.value)} />
+              <div className="grid-row">
+                <label>Address</label><span>:</span>
+                <textarea className="input-field" value={invoiceData.billToAddress} onChange={e => handleInvoiceChange('billToAddress', e.target.value)} />
+              </div>
+              <div className="grid-row">
+                <label>Pin Code</label><span>:</span>
+                <input className="input-field" value={invoiceData.billToPin} onChange={e => handleInvoiceChange('billToPin', e.target.value)} />
+              </div>
+              <div className="grid-row">
+                <label>GSTIN</label><span>:</span>
+                <input className="input-field font-bold" value={invoiceData.billToGst} onChange={e => handleInvoiceChange('billToGst', e.target.value)} />
+              </div>
+              <div className="grid-row">
+                <label>State</label><span>:</span>
+                <div className="flex-row w-full">
+                  <input className="input-field flex-grow" value={invoiceData.billToState} onChange={e => handleInvoiceChange('billToState', e.target.value)} />
+                  <span className="state-code-label">State Code :</span>
+                  <input className="input-field w-16 text-center" value={invoiceData.billToStateCode} onChange={e => handleInvoiceChange('billToStateCode', e.target.value)} />
+                </div>
+              </div>
             </div>
-            <div className="grid-row">
-              <label>Order No.</label><span>:</span>
-              <input className="input-field" value={invoiceData.orderNo} onChange={e => handleInvoiceChange('orderNo', e.target.value)} />
+            <div className="invoice-details">
+              <div className="grid-row">
+                <label>{invoiceData.documentType === 'credit-note' ? 'Credit Note No.' : 'Invoice No.'}</label><span>:</span>
+                <input className="input-field" value={invoiceData.invoiceNo} onChange={e => handleInvoiceChange('invoiceNo', e.target.value)} />
+              </div>
+              {invoiceData.documentType === 'credit-note' && (
+                <div className="grid-row">
+                  <label>Ref. Inv. No.</label><span>:</span>
+                  <input className="input-field" value={invoiceData.referenceInvoiceNo} onChange={e => handleInvoiceChange('referenceInvoiceNo', e.target.value)} placeholder="Original Invoice No." />
+                </div>
+              )}
+              <div className="grid-row">
+                <label>Date</label><span>:</span>
+                <input className="input-field" value={invoiceData.invoiceDate} onChange={e => handleInvoiceChange('invoiceDate', e.target.value)} />
+              </div>
+              <div className="grid-row">
+                <label>Order No.</label><span>:</span>
+                <input className="input-field" value={invoiceData.orderNo} onChange={e => handleInvoiceChange('orderNo', e.target.value)} />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Invoice Table Toolbar */}
-        <div className="no-print edit-toolbar flex gap-2 items-center mb-2 p-2 bg-gray-100 rounded border" style={{fontSize: '14px'}}>
-          <span className="font-bold text-gray-600 mr-2">Formatting:</span>
-          <button onMouseDown={e => {e.preventDefault(); document.execCommand('bold', false, null);}} className="btn icon-btn p-1" title="Bold"><Bold size={16}/></button>
-          <button onMouseDown={e => {e.preventDefault(); document.execCommand('italic', false, null);}} className="btn icon-btn p-1" title="Italic"><Italic size={16}/></button>
-          <button onMouseDown={e => {e.preventDefault(); document.execCommand('underline', false, null);}} className="btn icon-btn p-1" title="Underline"><Underline size={16}/></button>
-          
-          <div className="border-l h-6 mx-1 border-gray-300" />
-          
-          <select 
-            onMouseDown={() => {
-              const sel = window.getSelection();
-              if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
-            }} 
-            onChange={e => { 
-              if (window.savedRange) {
+          {/* Invoice Table Toolbar */}
+          <div className="no-print edit-toolbar flex gap-2 items-center mb-2 p-2 bg-gray-100 rounded border" style={{fontSize: '14px'}}>
+            <span className="font-bold text-gray-600 mr-2">Formatting:</span>
+            <button onMouseDown={e => {e.preventDefault(); document.execCommand('bold', false, null);}} className="btn icon-btn p-1" title="Bold"><Bold size={16}/></button>
+            <button onMouseDown={e => {e.preventDefault(); document.execCommand('italic', false, null);}} className="btn icon-btn p-1" title="Italic"><Italic size={16}/></button>
+            <button onMouseDown={e => {e.preventDefault(); document.execCommand('underline', false, null);}} className="btn icon-btn p-1" title="Underline"><Underline size={16}/></button>
+            
+            <div className="border-l h-6 mx-1 border-gray-300" />
+            
+            <select 
+              onMouseDown={() => {
                 const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(window.savedRange);
-              }
-              document.execCommand('fontName', false, e.target.value); 
-              e.target.selectedIndex = 0; 
-            }} 
-            className="input-field py-1" style={{height: 'auto', minWidth: '100px'}}>
-            <option value="">Font</option>
-            <option value="Arial">Arial</option>
-            <option value="Courier New">Courier New</option>
-            <option value="Georgia">Georgia</option>
-            <option value="Times New Roman">Times New Roman</option>
-            <option value="Verdana">Verdana</option>
-          </select>
-          
-          <select 
-            onMouseDown={() => {
-              const sel = window.getSelection();
-              if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
-            }} 
-            onChange={e => { 
-              if (window.savedRange) {
+                if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
+              }} 
+              onChange={e => { 
+                if (window.savedRange) {
+                  const sel = window.getSelection();
+                  sel.removeAllRanges();
+                  sel.addRange(window.savedRange);
+                }
+                document.execCommand('fontName', false, e.target.value); 
+                e.target.selectedIndex = 0; 
+              }} 
+              className="input-field py-1" style={{height: 'auto', minWidth: '100px'}}>
+              <option value="">Font</option>
+              <option value="Arial">Arial</option>
+              <option value="Courier New">Courier New</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Verdana">Verdana</option>
+            </select>
+            
+            <select 
+              onMouseDown={() => {
                 const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(window.savedRange);
-              }
-              document.execCommand('fontSize', false, e.target.value); 
-              e.target.selectedIndex = 0; 
-            }} 
-            className="input-field py-1" style={{height: 'auto', minWidth: '80px'}}>
-            <option value="">Size</option>
-            <option value="1">Small</option>
-            <option value="3">Normal</option>
-            <option value="5">Large</option>
-            <option value="7">Huge</option>
-          </select>
-          
-          <div className="border-l h-6 mx-1 border-gray-300" />
-          
-          <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyLeft', false, null);}} className="btn icon-btn p-1" title="Align Left"><AlignLeft size={16}/></button>
-          <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyCenter', false, null);}} className="btn icon-btn p-1" title="Align Center"><AlignCenter size={16}/></button>
-          <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyRight', false, null);}} className="btn icon-btn p-1" title="Align Right"><AlignRight size={16}/></button>
-        </div>
+                if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
+              }} 
+              onChange={e => { 
+                if (window.savedRange) {
+                  const sel = window.getSelection();
+                  sel.removeAllRanges();
+                  sel.addRange(window.savedRange);
+                }
+                document.execCommand('fontSize', false, e.target.value); 
+                e.target.selectedIndex = 0; 
+              }} 
+              className="input-field py-1" style={{height: 'auto', minWidth: '80px'}}>
+              <option value="">Size</option>
+              <option value="1">Small</option>
+              <option value="3">Normal</option>
+              <option value="5">Large</option>
+              <option value="7">Huge</option>
+            </select>
+            
+            <div className="border-l h-6 mx-1 border-gray-300" />
+            
+            <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyLeft', false, null);}} className="btn icon-btn p-1" title="Align Left"><AlignLeft size={16}/></button>
+            <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyCenter', false, null);}} className="btn icon-btn p-1" title="Align Center"><AlignCenter size={16}/></button>
+            <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyRight', false, null);}} className="btn icon-btn p-1" title="Align Right"><AlignRight size={16}/></button>
+          </div>
 
-        {/* Invoice Table */}
-        <table className="invoice-table">
-          <thead>
-            <tr>
-              <th style={{width: '5%'}}>Sr.No.</th>
-              <th style={{width: '45%'}}>Name of Product / Service</th>
-              <th style={{width: '8%'}}>HSN SAC</th>
-              <th style={{width: '8%'}}>Size</th>
-              <th style={{width: '8%'}}>TTL.Sq.Ft.</th>
-              <th style={{width: '6%'}}>Qty</th>
-              <th style={{width: '8%'}}>Rate</th>
-              <th style={{width: '12%'}}>Total</th>
-              <th className="no-print" style={{width: '5%'}}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => {
-              if (item.type === 'title') {
+          {/* Invoice Table */}
+          <table className="invoice-table">
+            <thead>
+              <tr>
+                <th style={{width: '5%'}}>Sr.No.</th>
+                <th style={{width: '45%'}}>Name of Product / Service</th>
+                <th style={{width: '8%'}}>HSN SAC</th>
+                <th style={{width: '8%'}}>Size</th>
+                <th style={{width: '8%'}}>TTL.Sq.Ft.</th>
+                <th style={{width: '6%'}}>Qty</th>
+                <th style={{width: '8%'}}>Rate</th>
+                <th style={{width: '12%'}}>Total</th>
+                <th className="no-print" style={{width: '8%'}}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => {
+                if (item.type === 'title') {
+                  return (
+                    <tr key={item.id} className="title-row">
+                      <td></td>
+                      <td>
+                        <RichTextEditor 
+                          className="input-field w-full font-bold underline" 
+                          value={item.name} 
+                          onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
+                          placeholder="Enter Title..."
+                        />
+                      </td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td className="no-print text-center">
+                        <button onClick={() => removeItem(item.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                      </td>
+                    </tr>
+                  );
+                }
+                
                 return (
-                  <tr key={item.id} className="title-row">
-                    <td></td>
+                  <tr key={item.id} className="item-row">
+                    <td className="text-center">{srNo++}</td>
                     <td>
-                      <RichTextEditor 
-                        className="input-field w-full font-bold underline" 
+                      <AutocompleteTextarea 
+                        className="input-field w-full" 
                         value={item.name} 
                         onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
-                        placeholder="Enter Title..."
+                        onSelect={val => handleItemChange(item.id, 'name', val)}
+                        options={config.productHsnMapping.filter(m => m.product)}
                       />
                     </td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
+                    <td><input className="input-field w-full text-center" value={item.hsn} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} /></td>
+                    <td><input className="input-field w-full text-center" value={item.size} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="LxW" /></td>
+                    <td><input type="number" className="input-field w-full text-right" value={item.sqft} onChange={e => handleItemChange(item.id, 'sqft', parseFloat(e.target.value) || 0)} /></td>
+                    <td><input type="number" className="input-field w-full text-right" value={item.qty} onChange={e => handleItemChange(item.id, 'qty', parseInt(e.target.value) || 0)} /></td>
+                    <td><input type="number" className="input-field w-full text-right" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></td>
+                    <td className="text-right">{calculateItemTotal(item).toFixed(2)}</td>
                     <td className="no-print text-center">
-                      <button onClick={() => removeItem(item.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                      <div className="flex items-center justify-center gap-1">
+                        <select
+                          value={item.gstRate !== undefined ? item.gstRate : 18}
+                          onChange={e => handleItemChange(item.id, 'gstRate', Number(e.target.value))}
+                          className="input-field text-xs py-0 px-1 border"
+                          style={{width: '54px', fontSize: '10px'}}
+                          title="GST Rate %"
+                        >
+                          <option value={0}>0%</option>
+                          <option value={5}>5%</option>
+                          <option value={12}>12%</option>
+                          <option value={18}>18%</option>
+                          <option value={28}>28%</option>
+                        </select>
+                        <button onClick={() => removeItem(item.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                      </div>
                     </td>
                   </tr>
                 );
-              }
+              })}
               
-              return (
-                <tr key={item.id} className="item-row">
-                  <td className="text-center">{srNo++}</td>
+              <tr className="no-print">
+                <td></td>
+                <td className="text-center p-2">
+                  <div className="flex justify-center gap-4">
+                    <button onClick={addItem} className="btn"><Plus size={16} /> Add Item Row</button>
+                    <button onClick={addTitle} className="btn"><Plus size={16} /> Add Title Row</button>
+                  </div>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td className="no-print"></td>
+              </tr>
+
+              {/* Transportation Rows */}
+              {transportation.map((t) => (
+                <tr key={t.id} className="transportation-row">
+                  <td className="text-center">{!t.isDescriptionOnly ? srNo++ : ''}</td>
                   <td>
-                    <AutocompleteTextarea 
-                      className="input-field w-full" 
-                      value={item.name} 
-                      onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
-                      onSelect={val => handleItemChange(item.id, 'name', val)}
-                      options={config.productHsnMapping.filter(m => m.product)}
-                    />
+                    <RichTextEditor className="input-field w-full" value={t.description} onChange={e => handleTransportChange(t.id, 'description', e.target.value)} placeholder="Transportation Charges..." />
                   </td>
-                  <td><input className="input-field w-full text-center" value={item.hsn} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} /></td>
-                  <td><input className="input-field w-full text-center" value={item.size} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="LxW" /></td>
-                  <td><input type="number" className="input-field w-full text-right" value={item.sqft} onChange={e => handleItemChange(item.id, 'sqft', parseFloat(e.target.value) || 0)} /></td>
-                  <td><input type="number" className="input-field w-full text-right" value={item.qty} onChange={e => handleItemChange(item.id, 'qty', parseInt(e.target.value) || 0)} /></td>
-                  <td><input type="number" className="input-field w-full text-right" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></td>
-                  <td className="text-right">{calculateItemTotal(item).toFixed(2)}</td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td className="text-right relative">
+                    {!t.isDescriptionOnly && (
+                      <>
+                        <input 
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="input-field w-full text-right no-print" 
+                          value={t.amount} 
+                          onChange={e => handleTransportChange(t.id, 'amount', e.target.value)}
+                          onBlur={e => handleTransportChange(t.id, 'amount', (parseFloat(e.target.value) || 0).toFixed(2))} 
+                        />
+                        <span className="print-only text-right block">{(Number(t.amount) || 0).toFixed(2)}</span>
+                      </>
+                    )}
+                  </td>
                   <td className="no-print text-center">
-                    <button onClick={() => removeItem(item.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                    <div className="flex items-center justify-center gap-1">
+                      {!t.isDescriptionOnly && (
+                        <select 
+                          value={t.gstRate !== undefined ? t.gstRate : 18} 
+                          onChange={e => handleTransportChange(t.id, 'gstRate', Number(e.target.value))}
+                          className="input-field text-xs py-0 px-1 border"
+                          style={{width: '54px', fontSize: '10px'}}
+                          title="GST Rate %"
+                        >
+                          <option value={0}>0%</option>
+                          <option value={5}>5%</option>
+                          <option value={12}>12%</option>
+                          <option value={18}>18%</option>
+                          <option value={28}>28%</option>
+                        </select>
+                      )}
+                      <button onClick={() => removeTransport(t.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                    </div>
                   </td>
                 </tr>
-              );
-            })}
-            
-            <tr className="no-print">
-              <td></td>
-              <td className="text-center p-2">
-                <div className="flex justify-center gap-4">
-                  <button onClick={addItem} className="btn"><Plus size={16} /> Add Item Row</button>
-                  <button onClick={addTitle} className="btn"><Plus size={16} /> Add Title Row</button>
-                </div>
-              </td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td className="no-print"></td>
-            </tr>
-
-            {/* Transportation Rows */}
-            {transportation.map((t) => (
-              <tr key={t.id} className="transportation-row">
+              ))}
+              
+              <tr className="no-print">
                 <td></td>
-                <td>
-                  <RichTextEditor className="input-field w-full" value={t.description} onChange={e => handleTransportChange(t.id, 'description', e.target.value)} placeholder="Transportation Charges..." />
+                <td className="text-center p-2">
+                  <div className="flex justify-center gap-4">
+                    <button onClick={addTransport} className="btn text-xs"><Plus size={14} /> Add Transport Charge</button>
+                    <button onClick={addTransportDescription} className="btn text-xs"><Plus size={14} /> Add Transport Description</button>
+                  </div>
                 </td>
                 <td></td>
                 <td></td>
                 <td></td>
                 <td></td>
                 <td></td>
-                <td className="text-right relative">
-                  {!t.isDescriptionOnly && (
-                    <>
-                      <input type="number" className="input-field w-full text-right no-print" value={t.amount} onChange={e => handleTransportChange(t.id, 'amount', parseFloat(e.target.value) || 0)} />
-                      <span className="print-only text-right block">{(Number(t.amount) || 0).toFixed(2)}</span>
-                    </>
-                  )}
-                </td>
-                <td className="no-print text-center">
-                   <button onClick={() => removeTransport(t.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
-                </td>
+                <td></td>
+                <td className="no-print"></td>
               </tr>
-            ))}
-            
-            <tr className="no-print">
-              <td></td>
-              <td className="text-center p-2">
-                <div className="flex justify-center gap-4">
-                  <button onClick={addTransport} className="btn text-xs"><Plus size={14} /> Add Transport Charge</button>
-                  <button onClick={addTransportDescription} className="btn text-xs"><Plus size={14} /> Add Transport Description</button>
+
+              <tr className="empty-filler">
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td className="no-print"></td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Footer Area */}
+          <div className="invoice-footer border-t">
+            <div className="footer-left">
+              <div className="bank-details text-xxs">
+                <div className="bank-row">
+                  <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
                 </div>
-              </td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td className="no-print"></td>
-            </tr>
-
-            <tr className="empty-filler">
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td className="no-print"></td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* Footer Area */}
-        <div className="invoice-footer border-t">
-          <div className="footer-left">
-            <div className="bank-details text-xxs">
-              <div className="bank-row">
-                <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
-              </div>
-              <div className="bank-row">
-                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
+                <div className="bank-row">
+                  <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
+                </div>
+                <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
+                <div className="bank-row">
+                  <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
+                </div>
+                <div className="bank-row">
+                  <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
+                </div>
               </div>
               <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
-              <div className="bank-row">
-                <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
+              <div className="amount-in-words font-bold mb-1 mt-1 text-xs">
+                Rs. {numberToWords(roundedTotal)}
               </div>
-              <div className="bank-row">
-                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
+              <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
+              <div className="terms-conditions text-xxs text-gray-600">
+                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
+                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
+                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
+                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
               </div>
-            </div>
-            <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
-            <div className="amount-in-words font-bold mb-1 mt-1 text-xs">
-              Rs. {numberToWords(roundedTotal)}
-            </div>
-            <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
-            <div className="terms-conditions text-xxs text-gray-600">
-              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
-              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
-              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
-              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
-            </div>
-            <div className="jurisdiction text-xxs mt-2">
-              <p>E. & O.E.</p>
-              <p>Subject to Jabalpur Jurisdiction</p>
-            </div>
-          </div>
-          
-          <div className="footer-right border-l pl-1 flex text-xs" style={{flexDirection: 'column', minHeight: '150px'}}>
-            <div className="p-2 rounded w-full" style={{border: '1px solid #000'}}>
-              <div className="tax-calc-row font-bold">
-                <span>Total Amount/Taxable Value :</span>
-                <span className="text-right">{taxableValue.toFixed(2)}</span>
-              </div>
-              {isInterState ? (
-                <div className="tax-calc-row">
-                  <span className="flex items-center">Add : IGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={igstRate} readOnly />{' '}%</span>
-                  <span className="text-right">{igst.toFixed(2)}</span>
-                </div>
-              ) : (
-                <>
-                  <div className="tax-calc-row">
-                    <span className="flex items-center">Add : CGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.cgstRate} onChange={e => handleConfigChange('taxInfo', 'cgstRate', parseFloat(e.target.value) || 0)} />%</span>
-                    <span className="text-right">{cgst.toFixed(2)}</span>
-                  </div>
-                  <div className="tax-calc-row">
-                    <span className="flex items-center">Add : SGST :<input type="number" className="input-field w-12 text-right ml-1 py-0" value={config.taxInfo.sgstRate} onChange={e => handleConfigChange('taxInfo', 'sgstRate', parseFloat(e.target.value) || 0)} />%</span>
-                    <span className="text-right">{sgst.toFixed(2)}</span>
-                  </div>
-                </>
-              )}
-              <div className="tax-calc-row">
-                <span className="flex items-center">
-                  Round Off
-                  <input 
-                    type="checkbox" 
-                    title="Enable Round Off"
-                    className="no-print ml-2" 
-                    checked={config.enableRoundOff !== false} 
-                    onChange={e => handleConfigChange(null, 'enableRoundOff', e.target.checked)} 
-                  />
-                </span>
-                <span className="text-right">{roundOff.toFixed(2)}</span>
-              </div>
-              <div className="tax-calc-row font-bold mt-1 pt-1" style={{borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px'}}>
-                <span>Total Amount After Tax :</span>
-                <span className="text-right">{roundedTotal.toFixed(2)}</span>
+              <div className="jurisdiction text-xxs mt-2">
+                <p>E. & O.E.</p>
+                <p>Subject to Jabalpur Jurisdiction</p>
               </div>
             </div>
             
-            <div className="signature-area text-right pt-4" style={{ marginTop: 'auto' }}>
-              <p className="mb-8 text-xs font-bold">for : Jain Advertising Agency</p>
-              <p className="text-xs">Proprietor.</p>
+            <div className="footer-right border-l pl-1 flex text-xs" style={{flexDirection: 'column', minHeight: '150px'}}>
+              <div className="p-2 rounded w-full" style={{border: '1px solid #000'}}>
+                <div className="tax-calc-row font-bold">
+                  <span>Total Amount/Taxable Value :</span>
+                  <span className="text-right">{taxableValue.toFixed(2)}</span>
+                </div>
+                {taxSlabs.length === 0 ? null : taxSlabs.length === 1 ? (
+                  isInterState ? (
+                    <div className="tax-calc-row">
+                      <span className="flex items-center">Add : IGST ({taxSlabs[0].igstRate}%):</span>
+                      <span className="text-right">{taxSlabs[0].igstAmt.toFixed(2)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="tax-calc-row">
+                        <span className="flex items-center">Add : CGST ({taxSlabs[0].cgstRate}%):</span>
+                        <span className="text-right">{taxSlabs[0].cgstAmt.toFixed(2)}</span>
+                      </div>
+                      <div className="tax-calc-row">
+                        <span className="flex items-center">Add : SGST ({taxSlabs[0].sgstRate}%):</span>
+                        <span className="text-right">{taxSlabs[0].sgstAmt.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )
+                ) : (
+                  taxSlabs.map(slab => (
+                    isInterState ? (
+                      <div key={slab.rate} className="tax-calc-row">
+                        <span className="flex items-center">Add : IGST @ {slab.igstRate}%:</span>
+                        <span className="text-right">{slab.igstAmt.toFixed(2)}</span>
+                      </div>
+                    ) : (
+                      <div key={slab.rate}>
+                        <div className="tax-calc-row">
+                          <span className="flex items-center">Add : CGST @ {slab.cgstRate}%:</span>
+                          <span className="text-right">{slab.cgstAmt.toFixed(2)}</span>
+                        </div>
+                        <div className="tax-calc-row">
+                          <span className="flex items-center">Add : SGST @ {slab.sgstRate}%:</span>
+                          <span className="text-right">{slab.sgstAmt.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )
+                  ))
+                )}
+                <div className="tax-calc-row">
+                  <span className="flex items-center">
+                    Round Off
+                    <input 
+                      type="checkbox" 
+                      title="Enable Round Off"
+                      className="no-print ml-2" 
+                      checked={config.enableRoundOff !== false} 
+                      onChange={e => handleConfigChange(null, 'enableRoundOff', e.target.checked)} 
+                    />
+                  </span>
+                  <span className="text-right">{roundOff.toFixed(2)}</span>
+                </div>
+                <div className="tax-calc-row font-bold mt-1 pt-1" style={{borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px'}}>
+                  <span>Total Amount After Tax :</span>
+                  <span className="text-right">{roundedTotal.toFixed(2)}</span>
+                </div>
+              </div>
+              
+              <div className="signature-area text-right pt-4" style={{ marginTop: 'auto' }}>
+                <p className="mb-8 text-xs font-bold">for : Jain Advertising Agency</p>
+                <p className="text-xs">Proprietor.</p>
+              </div>
             </div>
           </div>
         </div>

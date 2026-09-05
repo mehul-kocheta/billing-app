@@ -1366,7 +1366,7 @@ function App() {
                     />
                   </td>
                   <td><input className="input-field w-full text-center" value={item.hsn} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} /></td>
-                  <td><input className="input-field w-full text-center" value={item.size} onChange={e => handleItemChange(item.id, 'size', e.target.value)} /></td>
+                  <td><input className="input-field w-full text-center" value={item.size} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="LxW" /></td>
                   <td><input type="number" className="input-field w-full text-right" value={item.sqft} onChange={e => handleItemChange(item.id, 'sqft', parseFloat(e.target.value) || 0)} /></td>
                   <td><input type="number" className="input-field w-full text-right" value={item.qty} onChange={e => handleItemChange(item.id, 'qty', parseInt(e.target.value) || 0)} /></td>
                   <td><input type="number" className="input-field w-full text-right" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></td>
@@ -1487,7 +1487,7 @@ function App() {
             </div>
           </div>
           
-          <div className="footer-right border-l pl-1 flex text-xs" style={{flexDirection: 'column', minHeight: '200px'}}>
+          <div className="footer-right border-l pl-1 flex text-xs" style={{flexDirection: 'column', minHeight: '150px'}}>
             <div className="p-2 rounded w-full" style={{border: '1px solid #000'}}>
               <div className="tax-calc-row font-bold">
                 <span>Total Amount/Taxable Value :</span>
@@ -1529,8 +1529,8 @@ function App() {
               </div>
             </div>
             
-            <div className="signature-area text-right mt-16 pt-4">
-              <p className="mb-6 text-xs font-bold">for : Jain Advertising Agency</p>
+            <div className="signature-area text-right pt-4" style={{ marginTop: 'auto' }}>
+              <p className="mb-8 text-xs font-bold">for : Jain Advertising Agency</p>
               <p className="text-xs">Proprietor.</p>
             </div>
           </div>

@@ -422,7 +422,7 @@ function App() {
   const [items, setItems] = useState([
     { id: uuidv4(), type: 'title', name: 'Supply of FL & BL Boards' },
     { id: uuidv4(), type: 'title', name: 'For Sagar (WOD296)' },
-    { id: uuidv4(), type: 'item', name: 'New FL Board with Print', hsn: '3919', size: "6'x3'", sqft: 540, qty: 30, rate: 41, gstRate: 18 },
+    { id: uuidv4(), type: 'item', name: 'New FL Board with Print', hsn: '3919', size: "6'x3'", sqft: 540, qty: 30, rate: 41, calcMode: 'sqft_rate', total: '22140.00', gstRate: 18 },
   ]);
 
   const [transportation, setTransportation] = useState([
@@ -618,6 +618,24 @@ function App() {
     return mapping ? mapping.hsn : '';
   };
 
+  const computeItemTotal = (mode, sqft, qty, rate, currentTotal) => {
+    const s = parseFloat(sqft) || 0;
+    const q = parseFloat(qty) || 0;
+    const r = parseFloat(rate) || 0;
+
+    switch (mode) {
+      case 'sqft_qty_rate':
+        return (s * q * r).toFixed(2);
+      case 'sqft_rate':
+        return (s * r).toFixed(2);
+      case 'qty_rate':
+        return (q * r).toFixed(2);
+      case 'manual':
+      default:
+        return currentTotal !== undefined && currentTotal !== null && currentTotal !== '' ? currentTotal : '0.00';
+    }
+  };
+
   const handleItemChange = (id, field, value) => {
     setItems(prev => prev.map(item => {
       if (item.id === id) {
@@ -632,12 +650,29 @@ function App() {
           }
         }
 
+        // If user directly edits total, switch to manual mode
+        if (field === 'total') {
+          newItem.calcMode = 'manual';
+        }
+
         // Auto-calculate SqFt if size or qty changes
         if ((field === 'size' || field === 'qty') && item.type === 'item') {
           const unitArea = parseSizeToSqFt(newItem.size);
           if (unitArea > 0) {
-            newItem.sqft = parseFloat((unitArea * newItem.qty).toFixed(2));
+            if (newItem.calcMode === 'sqft_qty_rate') {
+              newItem.sqft = parseFloat(unitArea.toFixed(2));
+            } else {
+              newItem.sqft = parseFloat((unitArea * (parseFloat(newItem.qty) || 1)).toFixed(2));
+            }
           }
+        }
+
+        // Recalculate total if mode changes or calculation components change
+        const currentMode = newItem.calcMode || 'sqft_rate';
+        if (field === 'calcMode') {
+          newItem.total = computeItemTotal(value, newItem.sqft, newItem.qty, newItem.rate, newItem.total);
+        } else if (currentMode !== 'manual' && (field === 'sqft' || field === 'qty' || field === 'rate' || field === 'size')) {
+          newItem.total = computeItemTotal(currentMode, newItem.sqft, newItem.qty, newItem.rate, newItem.total);
         }
         
         return newItem;
@@ -647,7 +682,7 @@ function App() {
   };
 
   const addItem = () => {
-    setItems(prev => [...prev, { id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: 0, qty: 1, rate: 0, gstRate: 18 }]);
+    setItems(prev => [...prev, { id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: '', qty: 1, rate: '', calcMode: 'sqft_rate', total: '0.00', gstRate: 18 }]);
   };
 
   const addTitle = () => {
@@ -704,17 +739,24 @@ function App() {
       documentType: 'invoice',
       referenceInvoiceNo: '',
     });
-    setItems([{ id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: 0, qty: 1, rate: 0, gstRate: 18 }]);
+    setItems([{ id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: '', qty: 1, rate: '', calcMode: 'sqft_rate', total: '0.00', gstRate: 18 }]);
     setTransportation([]);
   };
 
   // Calculations
   const calculateItemTotal = (item) => {
     if (item.type === 'title') return 0;
-    if (item.sqft > 0) {
-      return item.sqft * item.rate;
+    if (item.total !== undefined && item.total !== null && item.total !== '') {
+      return Number(item.total) || 0;
     }
-    return item.qty * item.rate;
+    const mode = item.calcMode || (item.sqft > 0 ? 'sqft_rate' : 'qty_rate');
+    const s = parseFloat(item.sqft) || 0;
+    const q = parseFloat(item.qty) || 0;
+    const r = parseFloat(item.rate) || 0;
+    if (mode === 'sqft_qty_rate') return s * q * r;
+    if (mode === 'sqft_rate') return s * r;
+    if (mode === 'qty_rate') return q * r;
+    return 0;
   };
 
   const itemsTotal = items.reduce((sum, item) => sum + calculateItemTotal(item), 0);
@@ -866,7 +908,17 @@ function App() {
       referenceInvoiceNo: '',
       ...cloned.invoiceData
     });
-    setItems((cloned.items || []).map(item => ({ ...item, type: item.type || 'item', gstRate: item.gstRate !== undefined ? item.gstRate : 18, id: uuidv4() })));
+    setItems((cloned.items || []).map(item => {
+      const fallbackTotal = (item.sqft > 0 ? item.sqft * (Number(item.rate) || 0) : (item.qty || 0) * (Number(item.rate) || 0)) || 0;
+      return {
+        ...item,
+        type: item.type || 'item',
+        calcMode: item.calcMode || (item.sqft > 0 ? 'sqft_rate' : (item.rate > 0 ? 'qty_rate' : 'manual')),
+        total: item.total !== undefined && item.total !== null && item.total !== '' ? item.total : fallbackTotal.toFixed(2),
+        gstRate: item.gstRate !== undefined ? item.gstRate : 18,
+        id: uuidv4()
+      };
+    }));
     setTransportation((cloned.transportation || []).map(t => ({ ...t, amount: t.amount !== undefined ? String(t.amount) : '0.00', gstRate: t.gstRate !== undefined ? t.gstRate : 18, id: uuidv4() })));
     setCurrentView('invoice');
   };
@@ -1091,7 +1143,10 @@ function App() {
         const recTransport = rec.transportation || [];
         const recItemsTotal = recItems.reduce((s, it) => {
           if (it.type === 'title') return s;
-          return s + (it.sqft > 0 ? it.sqft * it.rate : it.qty * it.rate);
+          const itTotal = (it.total !== undefined && it.total !== null && it.total !== '') 
+            ? (Number(it.total) || 0) 
+            : ((it.sqft > 0 ? it.sqft * (Number(it.rate) || 0) : (it.qty || 0) * (Number(it.rate) || 0)) || 0);
+          return s + itTotal;
         }, 0);
         const recTransTotal = recTransport.reduce((s, t) => s + (Number(t.amount) || 0), 0);
         const recTaxable = recItemsTotal + recTransTotal;
@@ -1120,7 +1175,9 @@ function App() {
          const sgstRate = itemRate / 2;
          const igstRate = itemRate;
 
-         const taxable = item.sqft > 0 ? item.sqft * item.rate : item.qty * item.rate;
+         const taxable = (item.total !== undefined && item.total !== null && item.total !== '') 
+           ? (Number(item.total) || 0) 
+           : ((item.sqft > 0 ? item.sqft * (Number(item.rate) || 0) : (item.qty || 0) * (Number(item.rate) || 0)) || 0);
          if (!hsnTotals[hsn]) hsnTotals[hsn] = { hsn, taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
          
          const itemCgst = isInterState ? 0 : taxable * (cgstRate / 100);
@@ -1635,15 +1692,15 @@ function App() {
           <table className="invoice-table">
             <thead>
               <tr>
-                <th style={{width: '5%'}}>Sr.No.</th>
-                <th style={{width: '45%'}}>Name of Product / Service</th>
+                <th style={{width: '4%'}}>Sr.No.</th>
+                <th style={{width: '32%'}}>Name of Product / Service</th>
                 <th style={{width: '8%'}}>HSN SAC</th>
-                <th style={{width: '8%'}}>Size</th>
-                <th style={{width: '8%'}}>TTL.Sq.Ft.</th>
-                <th style={{width: '6%'}}>Qty</th>
-                <th style={{width: '8%'}}>Rate</th>
-                <th style={{width: '12%'}}>Total</th>
-                <th className="no-print" style={{width: '8%'}}></th>
+                <th style={{width: '7%'}}>Size</th>
+                <th style={{width: '7%'}}>TTL.Sq.Ft.</th>
+                <th style={{width: '5%'}}>Qty</th>
+                <th style={{width: '7%'}}>Rate</th>
+                <th style={{width: '11%'}}>Total</th>
+                <th className="no-print" style={{width: '19%', minWidth: '155px'}}></th>
               </tr>
             </thead>
             <tbody>
@@ -1667,7 +1724,9 @@ function App() {
                       <td></td>
                       <td></td>
                       <td className="no-print text-center">
-                        <button onClick={() => removeItem(item.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                        <div className="flex items-center justify-end" style={{paddingRight: '6px'}}>
+                          <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1685,19 +1744,44 @@ function App() {
                         options={config.productHsnMapping.filter(m => m.product)}
                       />
                     </td>
-                    <td><input className="input-field w-full text-center" value={item.hsn} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} /></td>
-                    <td><input className="input-field w-full text-center" value={item.size} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="LxW" /></td>
-                    <td><input type="number" className="input-field w-full text-right" value={item.sqft} onChange={e => handleItemChange(item.id, 'sqft', parseFloat(e.target.value) || 0)} /></td>
-                    <td><input type="number" className="input-field w-full text-right" value={item.qty} onChange={e => handleItemChange(item.id, 'qty', parseInt(e.target.value) || 0)} /></td>
-                    <td><input type="number" className="input-field w-full text-right" value={item.rate} onChange={e => handleItemChange(item.id, 'rate', parseFloat(e.target.value) || 0)} /></td>
-                    <td className="text-right">{calculateItemTotal(item).toFixed(2)}</td>
+                    <td><input className="input-field w-full text-center" value={item.hsn || ''} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} placeholder="-" /></td>
+                    <td><input className="input-field w-full text-center" value={item.size || ''} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="LxW" /></td>
+                    <td><input type="number" step="any" className="input-field w-full text-right" value={item.sqft !== undefined && item.sqft !== null && item.sqft !== '' ? item.sqft : ''} onChange={e => handleItemChange(item.id, 'sqft', e.target.value)} placeholder="-" /></td>
+                    <td><input type="number" step="any" className="input-field w-full text-right" value={item.qty !== undefined && item.qty !== null && item.qty !== '' ? item.qty : ''} onChange={e => handleItemChange(item.id, 'qty', e.target.value)} placeholder="-" /></td>
+                    <td><input type="number" step="any" className="input-field w-full text-right" value={item.rate !== undefined && item.rate !== null && item.rate !== '' ? item.rate : ''} onChange={e => handleItemChange(item.id, 'rate', e.target.value)} placeholder="-" /></td>
+                    <td className="text-right relative">
+                      <input 
+                        type="number" 
+                        step="any"
+                        className="input-field w-full text-right no-print" 
+                        value={item.total !== undefined ? item.total : ''} 
+                        onChange={e => handleItemChange(item.id, 'total', e.target.value)} 
+                        onBlur={e => {
+                          const val = parseFloat(e.target.value);
+                          handleItemChange(item.id, 'total', isNaN(val) ? '0.00' : val.toFixed(2));
+                        }} 
+                      />
+                      <span className="print-only text-right block">{(Number(item.total !== undefined && item.total !== '' ? item.total : calculateItemTotal(item)) || 0).toFixed(2)}</span>
+                    </td>
                     <td className="no-print text-center">
-                      <div className="flex items-center justify-center gap-1">
+                      <div className="flex items-center justify-end gap-1.5" style={{paddingRight: '6px'}}>
+                        <select
+                          value={item.calcMode || 'sqft_rate'}
+                          onChange={e => handleItemChange(item.id, 'calcMode', e.target.value)}
+                          className="input-field text-xs py-0 px-1 border rounded"
+                          style={{width: '74px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
+                          title="Calculation Mode"
+                        >
+                          <option value="sqft_rate">SqFt×Rate</option>
+                          <option value="sqft_qty_rate">SqFt×Qty×Rate</option>
+                          <option value="qty_rate">Qty×Rate</option>
+                          <option value="manual">Manual</option>
+                        </select>
                         <select
                           value={item.gstRate !== undefined ? item.gstRate : 18}
                           onChange={e => handleItemChange(item.id, 'gstRate', Number(e.target.value))}
-                          className="input-field text-xs py-0 px-1 border"
-                          style={{width: '54px', fontSize: '10px'}}
+                          className="input-field text-xs py-0 px-1 border rounded"
+                          style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
                           title="GST Rate %"
                         >
                           <option value={0}>0%</option>
@@ -1706,7 +1790,7 @@ function App() {
                           <option value={18}>18%</option>
                           <option value={28}>28%</option>
                         </select>
-                        <button onClick={() => removeItem(item.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                        <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -1759,13 +1843,13 @@ function App() {
                     )}
                   </td>
                   <td className="no-print text-center">
-                    <div className="flex items-center justify-center gap-1">
+                    <div className="flex items-center justify-end gap-1.5" style={{paddingRight: '6px'}}>
                       {!t.isDescriptionOnly && (
                         <select 
                           value={t.gstRate !== undefined ? t.gstRate : 18} 
                           onChange={e => handleTransportChange(t.id, 'gstRate', Number(e.target.value))}
-                          className="input-field text-xs py-0 px-1 border"
-                          style={{width: '54px', fontSize: '10px'}}
+                          className="input-field text-xs py-0 px-1 border rounded"
+                          style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
                           title="GST Rate %"
                         >
                           <option value={0}>0%</option>
@@ -1775,7 +1859,7 @@ function App() {
                           <option value={28}>28%</option>
                         </select>
                       )}
-                      <button onClick={() => removeTransport(t.id)} className="icon-btn text-red"><Trash2 size={16} /></button>
+                      <button onClick={() => removeTransport(t.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
                     </div>
                   </td>
                 </tr>

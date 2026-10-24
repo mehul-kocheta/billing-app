@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.example.billingapp",
     "productName": "Billing App",
+    "publish": null,
     "directories": {
       "output": "dist-electron"
     },

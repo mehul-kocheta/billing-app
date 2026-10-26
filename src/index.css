@@ -503,6 +503,9 @@ input[type="number"] {
     appearance: none;
     resize: none !important;
   }
+  input::placeholder, textarea::placeholder {
+    color: transparent !important;
+  }
   .print-only {
     display: inline !important;
   }

@@ -8,6 +8,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -39,3 +42,16 @@ jobs:
             dist-electron/*.blockmap
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+        with:
+          tag_name: v1.0.1
+          name: Billing App v1.0.1
+          draft: false
+          prerelease: false
+          files: |
+            dist-electron/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

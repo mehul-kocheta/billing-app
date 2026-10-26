@@ -1745,7 +1745,7 @@ function App() {
                       />
                     </td>
                     <td><input className="input-field w-full text-center" value={item.hsn || ''} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} placeholder="-" /></td>
-                    <td><input className="input-field w-full text-center" value={item.size || ''} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="LxW" /></td>
+                    <td><input className="input-field w-full text-center" value={item.size || ''} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="-" /></td>
                     <td><input type="number" step="any" className="input-field w-full text-right" value={item.sqft !== undefined && item.sqft !== null && item.sqft !== '' ? item.sqft : ''} onChange={e => handleItemChange(item.id, 'sqft', e.target.value)} placeholder="-" /></td>
                     <td><input type="number" step="any" className="input-field w-full text-right" value={item.qty !== undefined && item.qty !== null && item.qty !== '' ? item.qty : ''} onChange={e => handleItemChange(item.id, 'qty', e.target.value)} placeholder="-" /></td>
                     <td><input type="number" step="any" className="input-field w-full text-right" value={item.rate !== undefined && item.rate !== null && item.rate !== '' ? item.rate : ''} onChange={e => handleItemChange(item.id, 'rate', e.target.value)} placeholder="-" /></td>

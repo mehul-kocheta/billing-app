@@ -1770,16 +1770,12 @@ function App() {
                 <div className="bill-to">
                   <div className="grid-row">
                     <label>Name</label><span>:</span>
-                    {pageObj.isFirst ? (
-                      <PartyAutocompleteInput
-                        value={invoiceData.billToName}
-                        onChange={val => handleInvoiceChange('billToName', val)}
-                        onSelectParty={handleSelectParty}
-                        parties={parties}
-                      />
-                    ) : (
-                      <input className="input-field" value={invoiceData.billToName} onChange={e => handleInvoiceChange('billToName', e.target.value)} />
-                    )}
+                    <PartyAutocompleteInput
+                      value={invoiceData.billToName}
+                      onChange={val => handleInvoiceChange('billToName', val)}
+                      onSelectParty={handleSelectParty}
+                      parties={parties}
+                    />
                   </div>
                   <div className="grid-row">
                     <label>Address</label><span>:</span>

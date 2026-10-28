@@ -429,6 +429,8 @@ function App() {
     { id: uuidv4(), description: 'Transportation Charges from Jabalpur to Sagar Jabalpur', amount: '20375.00', gstRate: 18 }
   ]);
 
+  const paperRef = useRef(null);
+
   useEffect(() => {
     const loadData = async () => {
       let savedConfig = null;
@@ -709,13 +711,41 @@ function App() {
     setTransportation(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
-  const printDocument = () => {
-    if (window.electronAPI) {
-      window.electronAPI.printToPdf();
+  const handleSavePdf = async () => {
+    const suggestedName = invoiceData.invoiceNo?.trim()
+      ? `Invoice_${invoiceData.invoiceNo.trim()}`
+      : 'Invoice';
+
+    if (window.electronAPI?.savePdf) {
+      const res = await window.electronAPI.savePdf(suggestedName);
+      if (res && res.success) {
+        showToast('PDF saved successfully!');
+      } else if (res && res.error) {
+        showToast(`Failed to save PDF: ${res.error}`);
+      }
+    } else if (window.electronAPI?.printToPdf) {
+      const res = await window.electronAPI.printToPdf(suggestedName);
+      if (res && res.success) {
+        showToast('PDF saved successfully!');
+      } else if (res && res.error) {
+        showToast(`Failed to save PDF: ${res.error}`);
+      }
     } else {
       window.print();
     }
   };
+
+  const handlePrint = async () => {
+    if (window.electronAPI?.printDocument) {
+      const res = await window.electronAPI.printDocument();
+      if (res && !res.success && res.error) {
+        showToast(res.error);
+      }
+    } else {
+      window.print();
+    }
+  };
+
 
   const newBill = async () => {
     setEditingInvoiceId(null);
@@ -817,6 +847,149 @@ function App() {
   const isRoundOff = config.enableRoundOff !== false;
   const roundedTotal = isRoundOff ? Math.round(totalAfterTax) : totalAfterTax;
   const roundOff = isRoundOff ? roundedTotal - totalAfterTax : 0;
+
+  const pages = useMemo(() => {
+    const topMarginCm = parseFloat(config.topMargin) || 0;
+    const topMarginPx = topMarginCm * 37.8;
+    const pageHeightPx = 1122.5; // A4 height at 96 DPI
+
+    // Page 1 fixed non-row height: doc-type-label (~28) + invoice-meta-row (~132) + thead (~28) + subtotal-row (~26) + footer (~176) = topMarginPx + 390px
+    const p1NonItemH = topMarginPx + 390;
+    const p1Capacity = Math.max(250, pageHeightPx - p1NonItemH);
+
+    // Subsequent pages fixed non-row height: doc-type-label (~28) + invoice-meta-row (~132) + thead (~28) + continuation-row (~34) + subtotal-row (~26) + footer (~176) = topMarginPx + 424px
+    const subNonItemH = topMarginPx + 424;
+    const subCapacity = Math.max(250, pageHeightPx - subNonItemH);
+
+    const getItemH = (item) => {
+      if (item.type === 'title') return 25;
+      const text = (item.name || '').replace(/<[^>]+>/g, '').trim();
+      const lineCount = Math.max(1, text.split('\n').length, Math.ceil(text.length / 34));
+      return 25 + (lineCount - 1) * 16;
+    };
+
+    const getTransH = (t) => {
+      const text = (t.description || '').replace(/<[^>]+>/g, '').trim();
+      const lineCount = Math.max(1, text.split('\n').length, Math.ceil(text.length / 34));
+      return 25 + (lineCount - 1) * 16;
+    };
+
+    let totalH = 0;
+    for (const it of items) totalH += getItemH(it);
+    for (const tr of transportation) totalH += getTransH(tr);
+
+    if (totalH <= p1Capacity) {
+      return [{
+        pageIndex: 0,
+        isFirst: true,
+        isLast: true,
+        items,
+        transportation,
+        startSrNo: 1,
+        previousSubtotal: 0,
+        pageSubtotal: taxableValue
+      }];
+    }
+
+    const resultPages = [];
+    let curItems = [];
+    let curH = 0;
+    let startSrNo = 1;
+    let runningSrNo = 1;
+    let cumulativeSubtotal = 0;
+    let itemIdx = 0;
+
+    // Fill Page 1
+    while (itemIdx < items.length) {
+      const item = items[itemIdx];
+      const rowH = getItemH(item);
+      if (curItems.length > 0 && curH + rowH > p1Capacity) {
+        break;
+      }
+      curItems.push(item);
+      curH += rowH;
+      const itemTot = Number(item.total !== undefined && item.total !== '' ? item.total : calculateItemTotal(item)) || 0;
+      cumulativeSubtotal += itemTot;
+      if (item.type !== 'title') runningSrNo++;
+      itemIdx++;
+    }
+
+    resultPages.push({
+      pageIndex: 0,
+      isFirst: true,
+      isLast: false,
+      items: curItems,
+      transportation: [],
+      startSrNo: 1,
+      previousSubtotal: 0,
+      pageSubtotal: cumulativeSubtotal
+    });
+
+    // Fill Page 2 and subsequent pages
+    while (itemIdx < items.length) {
+      const pageIndex = resultPages.length;
+      curItems = [];
+      curH = 0;
+      startSrNo = runningSrNo;
+      const prevSub = cumulativeSubtotal;
+
+      while (itemIdx < items.length) {
+        const item = items[itemIdx];
+        const rowH = getItemH(item);
+        if (curItems.length > 0 && curH + rowH > subCapacity) {
+          break;
+        }
+        curItems.push(item);
+        curH += rowH;
+        const itemTot = Number(item.total !== undefined && item.total !== '' ? item.total : calculateItemTotal(item)) || 0;
+        cumulativeSubtotal += itemTot;
+        if (item.type !== 'title') runningSrNo++;
+        itemIdx++;
+      }
+
+      resultPages.push({
+        pageIndex,
+        isFirst: false,
+        isLast: false,
+        items: curItems,
+        transportation: [],
+        startSrNo,
+        previousSubtotal: prevSub,
+        pageSubtotal: cumulativeSubtotal
+      });
+    }
+
+    // Attach transportation to the last page (or add a new page if needed)
+    const lastPage = resultPages[resultPages.length - 1];
+    let transH = 0;
+    for (const tr of transportation) transH += getTransH(tr);
+
+    let lastPageCurH = 0;
+    for (const it of lastPage.items) lastPageCurH += getItemH(it);
+
+    if (lastPageCurH + transH <= subCapacity || resultPages.length === 1) {
+      lastPage.transportation = transportation;
+      lastPage.isLast = true;
+      lastPage.pageSubtotal = taxableValue;
+    } else {
+      const prevSub = cumulativeSubtotal;
+      resultPages.push({
+        pageIndex: resultPages.length,
+        isFirst: false,
+        isLast: true,
+        items: [],
+        transportation,
+        startSrNo: runningSrNo,
+        previousSubtotal: prevSub,
+        pageSubtotal: taxableValue
+      });
+    }
+
+    resultPages[resultPages.length - 1].isLast = true;
+    resultPages[resultPages.length - 1].pageSubtotal = taxableValue;
+
+    return resultPages;
+  }, [items, transportation, config.topMargin, taxableValue]);
 
   const saveToHistory = async () => {
     const invoiceKey = invoiceData.invoiceNo?.trim();
@@ -1517,8 +1690,6 @@ function App() {
   }
 
   // Invoice View
-  let srNo = 1;
-
   return (
     <div className="app-container">
       <div className="no-print header-actions flex justify-between">
@@ -1537,8 +1708,11 @@ function App() {
           <button onClick={saveToHistory} className="btn">
             <Save size={18} /> Save Invoice
           </button>
-          <button onClick={printDocument} className="btn primary">
-            <Printer size={18} /> Print / Save PDF
+          <button onClick={handleSavePdf} className="btn primary" title="Save invoice as PDF file">
+            <Download size={18} /> Save as PDF
+          </button>
+          <button onClick={handlePrint} className="btn" title="Print invoice to a printer">
+            <Printer size={18} /> Print
           </button>
           <button onClick={() => setCurrentView('settings')} className="btn">
             <Settings size={18} /> Settings
@@ -1546,463 +1720,551 @@ function App() {
         </div>
       </div>
 
-      <div className="invoice-paper" style={{ '--top-margin': `${config.topMargin}cm`, marginTop: `${config.topMargin}cm` }}>
-        {/* Document Type Toggle (no-print) + Printed label */}
-        <div className="no-print" style={{display: 'flex', justifyContent: 'center', marginBottom: 8}}>
-          <div className="doc-type-toggle">
-            <button
-              className={invoiceData.documentType !== 'credit-note' ? 'active-invoice' : ''}
-              onClick={() => handleInvoiceChange('documentType', 'invoice')}
-            >
-              Tax Invoice
-            </button>
-            <button
-              className={invoiceData.documentType === 'credit-note' ? 'active-credit-note' : ''}
-              onClick={() => handleInvoiceChange('documentType', 'credit-note')}
-            >
-              Credit Note
-            </button>
-          </div>
+      {/* Document Type Toggle (no-print) */}
+      <div className="no-print" style={{display: 'flex', justifyContent: 'center', marginBottom: 16}}>
+        <div className="doc-type-toggle">
+          <button
+            className={invoiceData.documentType !== 'credit-note' ? 'active-invoice' : ''}
+            onClick={() => handleInvoiceChange('documentType', 'invoice')}
+          >
+            Tax Invoice
+          </button>
+          <button
+            className={invoiceData.documentType === 'credit-note' ? 'active-credit-note' : ''}
+            onClick={() => handleInvoiceChange('documentType', 'credit-note')}
+          >
+            Credit Note
+          </button>
         </div>
-        {/* Outer Bill Frame for uniform borders */}
-        <div className="bill-frame">
-          <div className="doc-type-label">
-            <div className="doc-type-meta">Pan No. :- {config.companyPan || ''}</div>
-            <div className="doc-type-title">{invoiceData.documentType === 'credit-note' ? 'CREDIT NOTE' : 'TAX INVOICE'}</div>
-            <div className="doc-type-meta">GSTN :- {config.companyGst || ''}</div>
-          </div>
+      </div>
 
-          {/* Bill To & Invoice Meta */}
-          <div className="invoice-meta-row">
-            <div className="bill-to">
-              <div className="grid-row">
-                <label>Name</label><span>:</span>
-                <PartyAutocompleteInput
-                  value={invoiceData.billToName}
-                  onChange={val => handleInvoiceChange('billToName', val)}
-                  onSelectParty={handleSelectParty}
-                  parties={parties}
-                />
+      {pages.map((pageObj) => {
+        let srNo = pageObj.startSrNo;
+        return (
+          <div 
+            key={pageObj.pageIndex}
+            ref={pageObj.isFirst ? paperRef : null}
+            className="invoice-paper" 
+            style={{ 
+              '--top-margin': `${config.topMargin}cm`, 
+              marginTop: `${config.topMargin}cm`,
+              minHeight: `calc(297mm - ${config.topMargin}cm)`
+            }}
+          >
+            {pages.length > 1 && (
+              <div className="no-print page-sheet-badge">
+                Page {pageObj.pageIndex + 1} of {pages.length}
               </div>
-              <div className="grid-row">
-                <label>Address</label><span>:</span>
-                <textarea className="input-field" value={invoiceData.billToAddress} onChange={e => handleInvoiceChange('billToAddress', e.target.value)} />
+            )}
+
+            {/* Outer Bill Frame for uniform borders */}
+            <div className="bill-frame">
+              <div className="doc-type-label">
+                <div className="doc-type-meta">Pan No. :- {config.companyPan || ''}</div>
+                <div className="doc-type-title">{invoiceData.documentType === 'credit-note' ? 'CREDIT NOTE' : 'TAX INVOICE'}</div>
+                <div className="doc-type-meta">GSTN :- {config.companyGst || ''}</div>
               </div>
-              <div className="grid-row">
-                <label>Pin Code</label><span>:</span>
-                <input className="input-field" value={invoiceData.billToPin} onChange={e => handleInvoiceChange('billToPin', e.target.value)} />
-              </div>
-              <div className="grid-row">
-                <label>GSTIN</label><span>:</span>
-                <input className="input-field font-bold" value={invoiceData.billToGst} onChange={e => handleInvoiceChange('billToGst', e.target.value)} />
-              </div>
-              <div className="grid-row">
-                <label>State</label><span>:</span>
-                <div className="flex-row w-full">
-                  <input className="input-field flex-grow" value={invoiceData.billToState} onChange={e => handleInvoiceChange('billToState', e.target.value)} />
-                  <span className="state-code-label">State Code :</span>
-                  <input className="input-field w-16 text-center" value={invoiceData.billToStateCode} onChange={e => handleInvoiceChange('billToStateCode', e.target.value)} />
+
+              {/* Bill To & Invoice Meta */}
+              <div className="invoice-meta-row">
+                <div className="bill-to">
+                  <div className="grid-row">
+                    <label>Name</label><span>:</span>
+                    {pageObj.isFirst ? (
+                      <PartyAutocompleteInput
+                        value={invoiceData.billToName}
+                        onChange={val => handleInvoiceChange('billToName', val)}
+                        onSelectParty={handleSelectParty}
+                        parties={parties}
+                      />
+                    ) : (
+                      <input className="input-field" value={invoiceData.billToName} onChange={e => handleInvoiceChange('billToName', e.target.value)} />
+                    )}
+                  </div>
+                  <div className="grid-row">
+                    <label>Address</label><span>:</span>
+                    <textarea className="input-field" value={invoiceData.billToAddress} onChange={e => handleInvoiceChange('billToAddress', e.target.value)} />
+                  </div>
+                  <div className="grid-row">
+                    <label>Pin Code</label><span>:</span>
+                    <input className="input-field" value={invoiceData.billToPin} onChange={e => handleInvoiceChange('billToPin', e.target.value)} />
+                  </div>
+                  <div className="grid-row">
+                    <label>GSTIN</label><span>:</span>
+                    <input className="input-field font-bold" value={invoiceData.billToGst} onChange={e => handleInvoiceChange('billToGst', e.target.value)} />
+                  </div>
+                  <div className="grid-row">
+                    <label>State</label><span>:</span>
+                    <div className="flex-row w-full">
+                      <input className="input-field flex-grow" value={invoiceData.billToState} onChange={e => handleInvoiceChange('billToState', e.target.value)} />
+                      <span className="state-code-label">State Code :</span>
+                      <input className="input-field w-16 text-center" value={invoiceData.billToStateCode} onChange={e => handleInvoiceChange('billToStateCode', e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+                <div className="invoice-details">
+                  <div className="grid-row">
+                    <label>{invoiceData.documentType === 'credit-note' ? 'Credit Note No.' : 'Invoice No.'}</label><span>:</span>
+                    <input className="input-field" value={invoiceData.invoiceNo} onChange={e => handleInvoiceChange('invoiceNo', e.target.value)} />
+                  </div>
+                  {invoiceData.documentType === 'credit-note' && (
+                    <div className="grid-row">
+                      <label>Ref. Inv. No.</label><span>:</span>
+                      <input className="input-field" value={invoiceData.referenceInvoiceNo} onChange={e => handleInvoiceChange('referenceInvoiceNo', e.target.value)} placeholder="Original Invoice No." />
+                    </div>
+                  )}
+                  <div className="grid-row">
+                    <label>Date</label><span>:</span>
+                    <input className="input-field" value={invoiceData.invoiceDate} onChange={e => handleInvoiceChange('invoiceDate', e.target.value)} />
+                  </div>
+                  <div className="grid-row">
+                    <label>Order No.</label><span>:</span>
+                    <input className="input-field" value={invoiceData.orderNo} onChange={e => handleInvoiceChange('orderNo', e.target.value)} />
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="invoice-details">
-              <div className="grid-row">
-                <label>{invoiceData.documentType === 'credit-note' ? 'Credit Note No.' : 'Invoice No.'}</label><span>:</span>
-                <input className="input-field" value={invoiceData.invoiceNo} onChange={e => handleInvoiceChange('invoiceNo', e.target.value)} />
-              </div>
-              {invoiceData.documentType === 'credit-note' && (
-                <div className="grid-row">
-                  <label>Ref. Inv. No.</label><span>:</span>
-                  <input className="input-field" value={invoiceData.referenceInvoiceNo} onChange={e => handleInvoiceChange('referenceInvoiceNo', e.target.value)} placeholder="Original Invoice No." />
+
+              {/* Invoice Table Toolbar (Page 1 only) */}
+              {pageObj.isFirst && (
+                <div className="no-print edit-toolbar flex gap-2 items-center mb-2 p-2 bg-gray-100 rounded border" style={{fontSize: '14px'}}>
+                  <span className="font-bold text-gray-600 mr-2">Formatting:</span>
+                  <button onMouseDown={e => {e.preventDefault(); document.execCommand('bold', false, null);}} className="btn icon-btn p-1" title="Bold"><Bold size={16}/></button>
+                  <button onMouseDown={e => {e.preventDefault(); document.execCommand('italic', false, null);}} className="btn icon-btn p-1" title="Italic"><Italic size={16}/></button>
+                  <button onMouseDown={e => {e.preventDefault(); document.execCommand('underline', false, null);}} className="btn icon-btn p-1" title="Underline"><Underline size={16}/></button>
+                  
+                  <div className="border-l h-6 mx-1 border-gray-300" />
+                  
+                  <select 
+                    onMouseDown={() => {
+                      const sel = window.getSelection();
+                      if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
+                    }} 
+                    onChange={e => { 
+                      if (window.savedRange) {
+                        const sel = window.getSelection();
+                        sel.removeAllRanges();
+                        sel.addRange(window.savedRange);
+                      }
+                      document.execCommand('fontName', false, e.target.value); 
+                      e.target.selectedIndex = 0; 
+                    }} 
+                    className="input-field py-1" style={{height: 'auto', minWidth: '100px'}}>
+                    <option value="">Font</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                    <option value="Verdana">Verdana</option>
+                  </select>
+                  
+                  <select 
+                    onMouseDown={() => {
+                      const sel = window.getSelection();
+                      if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
+                    }} 
+                    onChange={e => { 
+                      if (window.savedRange) {
+                        const sel = window.getSelection();
+                        sel.removeAllRanges();
+                        sel.addRange(window.savedRange);
+                      }
+                      document.execCommand('fontSize', false, e.target.value); 
+                      e.target.selectedIndex = 0; 
+                    }} 
+                    className="input-field py-1" style={{height: 'auto', minWidth: '80px'}}>
+                    <option value="">Size</option>
+                    <option value="1">Small</option>
+                    <option value="3">Normal</option>
+                    <option value="5">Large</option>
+                    <option value="7">Huge</option>
+                  </select>
+                  
+                  <div className="border-l h-6 mx-1 border-gray-300" />
+                  
+                  <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyLeft', false, null);}} className="btn icon-btn p-1" title="Align Left"><AlignLeft size={16}/></button>
+                  <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyCenter', false, null);}} className="btn icon-btn p-1" title="Align Center"><AlignCenter size={16}/></button>
+                  <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyRight', false, null);}} className="btn icon-btn p-1" title="Align Right"><AlignRight size={16}/></button>
                 </div>
               )}
-              <div className="grid-row">
-                <label>Date</label><span>:</span>
-                <input className="input-field" value={invoiceData.invoiceDate} onChange={e => handleInvoiceChange('invoiceDate', e.target.value)} />
-              </div>
-              <div className="grid-row">
-                <label>Order No.</label><span>:</span>
-                <input className="input-field" value={invoiceData.orderNo} onChange={e => handleInvoiceChange('orderNo', e.target.value)} />
-              </div>
-            </div>
-          </div>
 
-          {/* Invoice Table Toolbar */}
-          <div className="no-print edit-toolbar flex gap-2 items-center mb-2 p-2 bg-gray-100 rounded border" style={{fontSize: '14px'}}>
-            <span className="font-bold text-gray-600 mr-2">Formatting:</span>
-            <button onMouseDown={e => {e.preventDefault(); document.execCommand('bold', false, null);}} className="btn icon-btn p-1" title="Bold"><Bold size={16}/></button>
-            <button onMouseDown={e => {e.preventDefault(); document.execCommand('italic', false, null);}} className="btn icon-btn p-1" title="Italic"><Italic size={16}/></button>
-            <button onMouseDown={e => {e.preventDefault(); document.execCommand('underline', false, null);}} className="btn icon-btn p-1" title="Underline"><Underline size={16}/></button>
-            
-            <div className="border-l h-6 mx-1 border-gray-300" />
-            
-            <select 
-              onMouseDown={() => {
-                const sel = window.getSelection();
-                if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
-              }} 
-              onChange={e => { 
-                if (window.savedRange) {
-                  const sel = window.getSelection();
-                  sel.removeAllRanges();
-                  sel.addRange(window.savedRange);
-                }
-                document.execCommand('fontName', false, e.target.value); 
-                e.target.selectedIndex = 0; 
-              }} 
-              className="input-field py-1" style={{height: 'auto', minWidth: '100px'}}>
-              <option value="">Font</option>
-              <option value="Arial">Arial</option>
-              <option value="Courier New">Courier New</option>
-              <option value="Georgia">Georgia</option>
-              <option value="Times New Roman">Times New Roman</option>
-              <option value="Verdana">Verdana</option>
-            </select>
-            
-            <select 
-              onMouseDown={() => {
-                const sel = window.getSelection();
-                if (sel.rangeCount > 0) window.savedRange = sel.getRangeAt(0);
-              }} 
-              onChange={e => { 
-                if (window.savedRange) {
-                  const sel = window.getSelection();
-                  sel.removeAllRanges();
-                  sel.addRange(window.savedRange);
-                }
-                document.execCommand('fontSize', false, e.target.value); 
-                e.target.selectedIndex = 0; 
-              }} 
-              className="input-field py-1" style={{height: 'auto', minWidth: '80px'}}>
-              <option value="">Size</option>
-              <option value="1">Small</option>
-              <option value="3">Normal</option>
-              <option value="5">Large</option>
-              <option value="7">Huge</option>
-            </select>
-            
-            <div className="border-l h-6 mx-1 border-gray-300" />
-            
-            <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyLeft', false, null);}} className="btn icon-btn p-1" title="Align Left"><AlignLeft size={16}/></button>
-            <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyCenter', false, null);}} className="btn icon-btn p-1" title="Align Center"><AlignCenter size={16}/></button>
-            <button onMouseDown={e => {e.preventDefault(); document.execCommand('justifyRight', false, null);}} className="btn icon-btn p-1" title="Align Right"><AlignRight size={16}/></button>
-          </div>
-
-          {/* Invoice Table */}
-          <table className="invoice-table">
-            <thead>
-              <tr>
-                <th style={{width: '4%'}}>Sr.No.</th>
-                <th style={{width: '32%'}}>Name of Product / Service</th>
-                <th style={{width: '8%'}}>HSN SAC</th>
-                <th style={{width: '7%'}}>Size</th>
-                <th style={{width: '7%'}}>TTL.Sq.Ft.</th>
-                <th style={{width: '5%'}}>Qty</th>
-                <th style={{width: '7%'}}>Rate</th>
-                <th style={{width: '11%'}}>Total</th>
-                <th className="no-print" style={{width: '19%', minWidth: '155px'}}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                if (item.type === 'title') {
-                  return (
-                    <tr key={item.id} className="title-row">
-                      <td></td>
-                      <td>
-                        <RichTextEditor 
-                          className="input-field w-full font-bold underline" 
-                          value={item.name} 
-                          onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
-                          placeholder="Enter Title..."
-                        />
+              {/* Invoice Table */}
+              <table className="invoice-table">
+                <thead>
+                  <tr>
+                    <th style={{width: '4%'}}>Sr.No.</th>
+                    <th style={{width: '32%'}}>Name of Product / Service</th>
+                    <th style={{width: '8%'}}>HSN SAC</th>
+                    <th style={{width: '7%'}}>Size</th>
+                    <th style={{width: '7%'}}>TTL.Sq.Ft.</th>
+                    <th style={{width: '5%'}}>Qty</th>
+                    <th style={{width: '7%'}}>Rate</th>
+                    <th style={{width: '11%'}}>Total</th>
+                    <th className="no-print" style={{width: '19%', minWidth: '155px'}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Continuation Row on subsequent pages */}
+                  {!pageObj.isFirst && (
+                    <tr className="continuation-row">
+                      <td className="text-center"></td>
+                      <td className="font-bold" style={{paddingLeft: '8px', lineHeight: '1.4'}}>
+                        <div>to continue………</div>
+                        <div>Balance c/f</div>
                       </td>
                       <td></td>
                       <td></td>
                       <td></td>
                       <td></td>
                       <td></td>
+                      <td className="text-right font-bold">
+                        {pageObj.previousSubtotal.toFixed(2)}
+                      </td>
+                      <td className="no-print"></td>
+                    </tr>
+                  )}
+
+                  {/* Items for this page */}
+                  {pageObj.items.map((item) => {
+                    if (item.type === 'title') {
+                      return (
+                        <tr key={item.id} className="title-row">
+                          <td></td>
+                          <td>
+                            <RichTextEditor 
+                              className="input-field w-full font-bold underline" 
+                              value={item.name} 
+                              onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
+                              placeholder="Enter Title..."
+                            />
+                          </td>
+                          <td></td>
+                          <td></td>
+                          <td></td>
+                          <td></td>
+                          <td></td>
+                          <td></td>
+                          <td className="no-print text-center">
+                            <div className="flex items-center justify-end" style={{paddingRight: '6px'}}>
+                              <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    
+                    return (
+                      <tr key={item.id} className="item-row">
+                        <td className="text-center">{srNo++}</td>
+                        <td>
+                          <AutocompleteTextarea 
+                            className="input-field w-full" 
+                            value={item.name} 
+                            onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
+                            onSelect={val => handleItemChange(item.id, 'name', val)}
+                            options={config.productHsnMapping.filter(m => m.product)}
+                          />
+                        </td>
+                        <td><input className="input-field w-full text-center" value={item.hsn || ''} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} placeholder="-" /></td>
+                        <td><input className="input-field w-full text-center" value={item.size || ''} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="-" /></td>
+                        <td><input type="number" step="any" className="input-field w-full text-right" value={item.sqft !== undefined && item.sqft !== null && item.sqft !== '' ? item.sqft : ''} onChange={e => handleItemChange(item.id, 'sqft', e.target.value)} placeholder="-" /></td>
+                        <td><input type="number" step="any" className="input-field w-full text-right" value={item.qty !== undefined && item.qty !== null && item.qty !== '' ? item.qty : ''} onChange={e => handleItemChange(item.id, 'qty', e.target.value)} placeholder="-" /></td>
+                        <td><input type="number" step="any" className="input-field w-full text-right" value={item.rate !== undefined && item.rate !== null && item.rate !== '' ? item.rate : ''} onChange={e => handleItemChange(item.id, 'rate', e.target.value)} placeholder="-" /></td>
+                        <td className="text-right relative">
+                          <input 
+                            type="number" 
+                            step="any"
+                            className="input-field w-full text-right no-print" 
+                            value={item.total !== undefined ? item.total : ''} 
+                            onChange={e => handleItemChange(item.id, 'total', e.target.value)} 
+                            onBlur={e => {
+                              const val = parseFloat(e.target.value);
+                              handleItemChange(item.id, 'total', isNaN(val) ? '0.00' : val.toFixed(2));
+                            }} 
+                          />
+                          <span className="print-only text-right block">{(Number(item.total !== undefined && item.total !== '' ? item.total : calculateItemTotal(item)) || 0).toFixed(2)}</span>
+                        </td>
+                        <td className="no-print text-center">
+                          <div className="flex items-center justify-end gap-1.5" style={{paddingRight: '6px'}}>
+                            <select
+                              value={item.calcMode || 'sqft_rate'}
+                              onChange={e => handleItemChange(item.id, 'calcMode', e.target.value)}
+                              className="input-field text-xs py-0 px-1 border rounded"
+                              style={{width: '74px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
+                              title="Calculation Mode"
+                            >
+                              <option value="sqft_rate">SqFt×Rate</option>
+                              <option value="sqft_qty_rate">SqFt×Qty×Rate</option>
+                              <option value="qty_rate">Qty×Rate</option>
+                              <option value="manual">Manual</option>
+                            </select>
+                            <select
+                              value={item.gstRate !== undefined ? item.gstRate : 18}
+                              onChange={e => handleItemChange(item.id, 'gstRate', Number(e.target.value))}
+                              className="input-field text-xs py-0 px-1 border rounded"
+                              style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
+                              title="GST Rate %"
+                            >
+                              <option value={0}>0%</option>
+                              <option value={5}>5%</option>
+                              <option value={12}>12%</option>
+                              <option value={18}>18%</option>
+                              <option value={28}>28%</option>
+                            </select>
+                            <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  
+                  {/* Add Row Buttons in UI (no-print) */}
+                  <tr className="no-print">
+                    <td></td>
+                    <td className="text-center p-2">
+                      <div className="flex justify-center gap-4">
+                        <button onClick={addItem} className="btn"><Plus size={16} /> Add Item Row</button>
+                        <button onClick={addTitle} className="btn"><Plus size={16} /> Add Title Row</button>
+                      </div>
+                    </td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td className="no-print"></td>
+                  </tr>
+
+                  {/* Transportation Rows on the last page */}
+                  {pageObj.isLast && pageObj.transportation.map((t) => (
+                    <tr key={t.id} className="transportation-row">
+                      <td className="text-center">{!t.isDescriptionOnly ? srNo++ : ''}</td>
+                      <td>
+                        <RichTextEditor className="input-field w-full" value={t.description} onChange={e => handleTransportChange(t.id, 'description', e.target.value)} placeholder="Transportation Charges..." />
+                      </td>
                       <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td className="text-right relative">
+                        {!t.isDescriptionOnly && (
+                          <>
+                            <input 
+                              type="number" 
+                              step="0.01" 
+                              min="0" 
+                              className="input-field w-full text-right no-print" 
+                              value={t.amount} 
+                              onChange={e => handleTransportChange(t.id, 'amount', e.target.value)} 
+                              onBlur={e => handleTransportChange(t.id, 'amount', (parseFloat(e.target.value) || 0).toFixed(2))} 
+                            />
+                            <span className="print-only text-right block">{(Number(t.amount) || 0).toFixed(2)}</span>
+                          </>
+                        )}
+                      </td>
                       <td className="no-print text-center">
-                        <div className="flex items-center justify-end" style={{paddingRight: '6px'}}>
-                          <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                        <div className="flex items-center justify-end gap-1.5" style={{paddingRight: '6px'}}>
+                          {!t.isDescriptionOnly && (
+                            <select 
+                              value={t.gstRate !== undefined ? t.gstRate : 18} 
+                              onChange={e => handleTransportChange(t.id, 'gstRate', Number(e.target.value))} 
+                              className="input-field text-xs py-0 px-1 border rounded" 
+                              style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}} 
+                              title="GST Rate %"
+                            >
+                              <option value={0}>0%</option>
+                              <option value={5}>5%</option>
+                              <option value={12}>12%</option>
+                              <option value={18}>18%</option>
+                              <option value={28}>28%</option>
+                            </select>
+                          )}
+                          <button onClick={() => removeTransport(t.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
                         </div>
                       </td>
                     </tr>
-                  );
-                }
-                
-                return (
-                  <tr key={item.id} className="item-row">
-                    <td className="text-center">{srNo++}</td>
-                    <td>
-                      <AutocompleteTextarea 
-                        className="input-field w-full" 
-                        value={item.name} 
-                        onChange={e => handleItemChange(item.id, 'name', e.target.value)} 
-                        onSelect={val => handleItemChange(item.id, 'name', val)}
-                        options={config.productHsnMapping.filter(m => m.product)}
-                      />
-                    </td>
-                    <td><input className="input-field w-full text-center" value={item.hsn || ''} onChange={e => handleItemChange(item.id, 'hsn', e.target.value)} placeholder="-" /></td>
-                    <td><input className="input-field w-full text-center" value={item.size || ''} onChange={e => handleItemChange(item.id, 'size', e.target.value)} placeholder="-" /></td>
-                    <td><input type="number" step="any" className="input-field w-full text-right" value={item.sqft !== undefined && item.sqft !== null && item.sqft !== '' ? item.sqft : ''} onChange={e => handleItemChange(item.id, 'sqft', e.target.value)} placeholder="-" /></td>
-                    <td><input type="number" step="any" className="input-field w-full text-right" value={item.qty !== undefined && item.qty !== null && item.qty !== '' ? item.qty : ''} onChange={e => handleItemChange(item.id, 'qty', e.target.value)} placeholder="-" /></td>
-                    <td><input type="number" step="any" className="input-field w-full text-right" value={item.rate !== undefined && item.rate !== null && item.rate !== '' ? item.rate : ''} onChange={e => handleItemChange(item.id, 'rate', e.target.value)} placeholder="-" /></td>
-                    <td className="text-right relative">
-                      <input 
-                        type="number" 
-                        step="any"
-                        className="input-field w-full text-right no-print" 
-                        value={item.total !== undefined ? item.total : ''} 
-                        onChange={e => handleItemChange(item.id, 'total', e.target.value)} 
-                        onBlur={e => {
-                          const val = parseFloat(e.target.value);
-                          handleItemChange(item.id, 'total', isNaN(val) ? '0.00' : val.toFixed(2));
-                        }} 
-                      />
-                      <span className="print-only text-right block">{(Number(item.total !== undefined && item.total !== '' ? item.total : calculateItemTotal(item)) || 0).toFixed(2)}</span>
-                    </td>
-                    <td className="no-print text-center">
-                      <div className="flex items-center justify-end gap-1.5" style={{paddingRight: '6px'}}>
-                        <select
-                          value={item.calcMode || 'sqft_rate'}
-                          onChange={e => handleItemChange(item.id, 'calcMode', e.target.value)}
-                          className="input-field text-xs py-0 px-1 border rounded"
-                          style={{width: '74px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
-                          title="Calculation Mode"
-                        >
-                          <option value="sqft_rate">SqFt×Rate</option>
-                          <option value="sqft_qty_rate">SqFt×Qty×Rate</option>
-                          <option value="qty_rate">Qty×Rate</option>
-                          <option value="manual">Manual</option>
-                        </select>
-                        <select
-                          value={item.gstRate !== undefined ? item.gstRate : 18}
-                          onChange={e => handleItemChange(item.id, 'gstRate', Number(e.target.value))}
-                          className="input-field text-xs py-0 px-1 border rounded"
-                          style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
-                          title="GST Rate %"
-                        >
-                          <option value={0}>0%</option>
-                          <option value={5}>5%</option>
-                          <option value={12}>12%</option>
-                          <option value={18}>18%</option>
-                          <option value={28}>28%</option>
-                        </select>
-                        <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
-                      </div>
-                    </td>
+                  ))}
+                  
+                  {pageObj.isLast && (
+                    <tr className="no-print">
+                      <td></td>
+                      <td className="text-center p-2">
+                        <div className="flex justify-center gap-4">
+                          <button onClick={addTransport} className="btn text-xs"><Plus size={14} /> Add Transport Charge</button>
+                          <button onClick={addTransportDescription} className="btn text-xs"><Plus size={14} /> Add Transport Description</button>
+                        </div>
+                      </td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td className="no-print"></td>
+                    </tr>
+                  )}
+
+                  <tr className="empty-filler">
+                    <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                    <td className="no-print"></td>
                   </tr>
-                );
-              })}
-              
-              <tr className="no-print">
-                <td></td>
-                <td className="text-center p-2">
-                  <div className="flex justify-center gap-4">
-                    <button onClick={addItem} className="btn"><Plus size={16} /> Add Item Row</button>
-                    <button onClick={addTitle} className="btn"><Plus size={16} /> Add Title Row</button>
-                  </div>
-                </td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td className="no-print"></td>
-              </tr>
 
-              {/* Transportation Rows */}
-              {transportation.map((t) => (
-                <tr key={t.id} className="transportation-row">
-                  <td className="text-center">{!t.isDescriptionOnly ? srNo++ : ''}</td>
-                  <td>
-                    <RichTextEditor className="input-field w-full" value={t.description} onChange={e => handleTransportChange(t.id, 'description', e.target.value)} placeholder="Transportation Charges..." />
-                  </td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td></td>
-                  <td className="text-right relative">
-                    {!t.isDescriptionOnly && (
-                      <>
-                        <input 
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          className="input-field w-full text-right no-print" 
-                          value={t.amount} 
-                          onChange={e => handleTransportChange(t.id, 'amount', e.target.value)}
-                          onBlur={e => handleTransportChange(t.id, 'amount', (parseFloat(e.target.value) || 0).toFixed(2))} 
-                        />
-                        <span className="print-only text-right block">{(Number(t.amount) || 0).toFixed(2)}</span>
-                      </>
-                    )}
-                  </td>
-                  <td className="no-print text-center">
-                    <div className="flex items-center justify-end gap-1.5" style={{paddingRight: '6px'}}>
-                      {!t.isDescriptionOnly && (
-                        <select 
-                          value={t.gstRate !== undefined ? t.gstRate : 18} 
-                          onChange={e => handleTransportChange(t.id, 'gstRate', Number(e.target.value))}
-                          className="input-field text-xs py-0 px-1 border rounded"
-                          style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
-                          title="GST Rate %"
-                        >
-                          <option value={0}>0%</option>
-                          <option value={5}>5%</option>
-                          <option value={12}>12%</option>
-                          <option value={18}>18%</option>
-                          <option value={28}>28%</option>
-                        </select>
+                  {/* Subtotal row */}
+                  <tr className="subtotal-row">
+                    <td colSpan={6} className="text-left font-bold" style={{paddingLeft: '8px'}}>
+                      {pageObj.isLast ? `Rs. ${numberToWords(roundedTotal)}` : 'Rs.'}
+                    </td>
+                    <td className="text-center font-bold">Total</td>
+                    <td className="text-right font-bold">{pageObj.pageSubtotal.toFixed(2)}</td>
+                    <td className="no-print"></td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* Footer Area */}
+              <div className="invoice-footer border-t">
+                <div className="footer-left">
+                  {pageObj.isLast && config.bankInfo && (config.bankInfo.bank1Name || config.bankInfo.bank2Name) && (
+                    <div className="bank-details text-xxs">
+                      {config.bankInfo.bank1Name && (
+                        <div className="bank-row">
+                          <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
+                        </div>
                       )}
-                      <button onClick={() => removeTransport(t.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                      {config.bankInfo.bank1Branch && (
+                        <div className="bank-row">
+                          <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
+                        </div>
+                      )}
+                      {config.bankInfo.bank2Name && (
+                        <>
+                          <div style={{borderBottom: '1px solid #9ca3af', margin: '4px 0', width: '75%'}}></div>
+                          <div className="bank-row">
+                            <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
+                          </div>
+                          {config.bankInfo.bank2Branch && (
+                            <div className="bank-row">
+                              <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div style={{borderBottom: '1px solid #9ca3af', margin: '4px 0', width: '75%'}}></div>
                     </div>
-                  </td>
-                </tr>
-              ))}
-              
-              <tr className="no-print">
-                <td></td>
-                <td className="text-center p-2">
-                  <div className="flex justify-center gap-4">
-                    <button onClick={addTransport} className="btn text-xs"><Plus size={14} /> Add Transport Charge</button>
-                    <button onClick={addTransportDescription} className="btn text-xs"><Plus size={14} /> Add Transport Description</button>
+                  )}
+                  <div className="terms-conditions text-xxs text-gray-600">
+                    <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
+                    <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
+                    <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
+                    <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
                   </div>
-                </td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td className="no-print"></td>
-              </tr>
-
-              <tr className="empty-filler">
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td className="no-print"></td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* Footer Area */}
-          <div className="invoice-footer border-t">
-            <div className="footer-left">
-              <div className="bank-details text-xxs">
-                <div className="bank-row">
-                  <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Name} onChange={e => handleConfigChange('bankInfo', 'bank1Name', e.target.value)} />
+                  <div className="jurisdiction text-xxs mt-2">
+                    <p>E. & O.E.</p>
+                    <p>Subject to Jabalpur Jurisdiction</p>
+                  </div>
                 </div>
-                <div className="bank-row">
-                  <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank1Branch} onChange={e => handleConfigChange('bankInfo', 'bank1Branch', e.target.value)} />
-                </div>
-                <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
-                <div className="bank-row">
-                  <input className="input-field w-full font-bold py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Name} onChange={e => handleConfigChange('bankInfo', 'bank2Name', e.target.value)} />
-                </div>
-                <div className="bank-row">
-                  <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.bankInfo.bank2Branch} onChange={e => handleConfigChange('bankInfo', 'bank2Branch', e.target.value)} />
-                </div>
-              </div>
-              <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
-              <div className="amount-in-words font-bold mb-1 mt-1 text-xs">
-                Rs. {numberToWords(roundedTotal)}
-              </div>
-              <div style={{borderBottom: '1px solid #9ca3af', margin: '6px 0', width: '75%'}}></div>
-              <div className="terms-conditions text-xxs text-gray-600">
-                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term1} onChange={e => handleConfigChange('termsInfo', 'term1', e.target.value)} />
-                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term2} onChange={e => handleConfigChange('termsInfo', 'term2', e.target.value)} />
-                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term3} onChange={e => handleConfigChange('termsInfo', 'term3', e.target.value)} />
-                <input className="input-field w-full py-0 text-xxs" style={{paddingLeft: 0}} value={config.termsInfo.term4} onChange={e => handleConfigChange('termsInfo', 'term4', e.target.value)} />
-              </div>
-              <div className="jurisdiction text-xxs mt-2">
-                <p>E. & O.E.</p>
-                <p>Subject to Jabalpur Jurisdiction</p>
-              </div>
-            </div>
-            
-            <div className="footer-right border-l pl-1 flex text-xs" style={{flexDirection: 'column', minHeight: '150px'}}>
-              <div className="p-2 rounded w-full" style={{border: '1px solid #000'}}>
-                <div className="tax-calc-row font-bold">
-                  <span>Total Amount/Taxable Value :</span>
-                  <span className="text-right">{taxableValue.toFixed(2)}</span>
-                </div>
-                {taxSlabs.length === 0 ? null : taxSlabs.length === 1 ? (
-                  isInterState ? (
-                    <div className="tax-calc-row">
-                      <span className="flex items-center">Add : IGST ({taxSlabs[0].igstRate}%):</span>
-                      <span className="text-right">{taxSlabs[0].igstAmt.toFixed(2)}</span>
+                
+                <div className="footer-right border-l pl-1 flex text-xs" style={{flexDirection: 'column', minHeight: '150px'}}>
+                  {pageObj.isLast ? (
+                    <div className="p-2 rounded w-full" style={{border: '1px solid #000'}}>
+                      <div className="tax-calc-row font-bold">
+                        <span>Total Amount/Taxable Value :</span>
+                        <span className="text-right">{taxableValue.toFixed(2)}</span>
+                      </div>
+                      {taxSlabs.length === 0 ? null : taxSlabs.length === 1 ? (
+                        isInterState ? (
+                          <div className="tax-calc-row">
+                            <span className="flex items-center">Add : IGST ({taxSlabs[0].igstRate}%):</span>
+                            <span className="text-right">{taxSlabs[0].igstAmt.toFixed(2)}</span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="tax-calc-row">
+                              <span className="flex items-center">Add : CGST ({taxSlabs[0].cgstRate}%):</span>
+                              <span className="text-right">{taxSlabs[0].cgstAmt.toFixed(2)}</span>
+                            </div>
+                            <div className="tax-calc-row">
+                              <span className="flex items-center">Add : SGST ({taxSlabs[0].sgstRate}%):</span>
+                              <span className="text-right">{taxSlabs[0].sgstAmt.toFixed(2)}</span>
+                            </div>
+                          </>
+                        )
+                      ) : (
+                        taxSlabs.map(slab => (
+                          isInterState ? (
+                            <div key={slab.rate} className="tax-calc-row">
+                              <span className="flex items-center">Add : IGST @ {slab.igstRate}%:</span>
+                              <span className="text-right">{slab.igstAmt.toFixed(2)}</span>
+                            </div>
+                          ) : (
+                            <div key={slab.rate}>
+                              <div className="tax-calc-row">
+                                <span className="flex items-center">Add : CGST @ {slab.cgstRate}%:</span>
+                                <span className="text-right">{slab.cgstAmt.toFixed(2)}</span>
+                              </div>
+                              <div className="tax-calc-row">
+                                <span className="flex items-center">Add : SGST @ {slab.sgstRate}%:</span>
+                                <span className="text-right">{slab.sgstAmt.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          )
+                        ))
+                      )}
+                      <div className="tax-calc-row">
+                        <span className="flex items-center">
+                          Round Off
+                          <input 
+                            type="checkbox" 
+                            title="Enable Round Off"
+                            className="no-print ml-2" 
+                            checked={config.enableRoundOff !== false} 
+                            onChange={e => handleConfigChange(null, 'enableRoundOff', e.target.checked)} 
+                          />
+                        </span>
+                        <span className="text-right">{roundOff.toFixed(2)}</span>
+                      </div>
+                      <div className="tax-calc-row font-bold mt-1 pt-1" style={{borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px'}}>
+                        <span>Total Amount After Tax :</span>
+                        <span className="text-right">{roundedTotal.toFixed(2)}</span>
+                      </div>
                     </div>
                   ) : (
-                    <>
-                      <div className="tax-calc-row">
-                        <span className="flex items-center">Add : CGST ({taxSlabs[0].cgstRate}%):</span>
-                        <span className="text-right">{taxSlabs[0].cgstAmt.toFixed(2)}</span>
+                    <div className="p-2 rounded w-full" style={{border: '1px solid #000'}}>
+                      <div className="tax-calc-row font-bold">
+                        <span>Total Amount/Taxable Value :</span>
+                        <span className="text-right">to continue……</span>
                       </div>
                       <div className="tax-calc-row">
-                        <span className="flex items-center">Add : SGST ({taxSlabs[0].sgstRate}%):</span>
-                        <span className="text-right">{taxSlabs[0].sgstAmt.toFixed(2)}</span>
+                        <span className="flex items-center">Add : CGST :- 9%</span>
+                        <span className="text-right">0.00</span>
                       </div>
-                    </>
-                  )
-                ) : (
-                  taxSlabs.map(slab => (
-                    isInterState ? (
-                      <div key={slab.rate} className="tax-calc-row">
-                        <span className="flex items-center">Add : IGST @ {slab.igstRate}%:</span>
-                        <span className="text-right">{slab.igstAmt.toFixed(2)}</span>
+                      <div className="tax-calc-row">
+                        <span className="flex items-center">Add : SGST :- 9%</span>
+                        <span className="text-right">0.00</span>
                       </div>
-                    ) : (
-                      <div key={slab.rate}>
-                        <div className="tax-calc-row">
-                          <span className="flex items-center">Add : CGST @ {slab.cgstRate}%:</span>
-                          <span className="text-right">{slab.cgstAmt.toFixed(2)}</span>
-                        </div>
-                        <div className="tax-calc-row">
-                          <span className="flex items-center">Add : SGST @ {slab.sgstRate}%:</span>
-                          <span className="text-right">{slab.sgstAmt.toFixed(2)}</span>
-                        </div>
+                      <div className="tax-calc-row">
+                        <span className="flex items-center">Round Off</span>
+                        <span className="text-right">0.00</span>
                       </div>
-                    )
-                  ))
-                )}
-                <div className="tax-calc-row">
-                  <span className="flex items-center">
-                    Round Off
-                    <input 
-                      type="checkbox" 
-                      title="Enable Round Off"
-                      className="no-print ml-2" 
-                      checked={config.enableRoundOff !== false} 
-                      onChange={e => handleConfigChange(null, 'enableRoundOff', e.target.checked)} 
-                    />
-                  </span>
-                  <span className="text-right">{roundOff.toFixed(2)}</span>
+                      <div className="tax-calc-row font-bold mt-1 pt-1" style={{borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px'}}>
+                        <span>Total Amount After Tax :</span>
+                        <span className="text-right">to continue……</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="signature-area text-right pt-4" style={{ marginTop: 'auto' }}>
+                    <p className="mb-8 text-xs font-bold">for : Jain Advertising Agency</p>
+                    <p className="text-xs">Proprietor.</p>
+                  </div>
                 </div>
-                <div className="tax-calc-row font-bold mt-1 pt-1" style={{borderTop: '1px solid #000', marginTop: '4px', paddingTop: '4px'}}>
-                  <span>Total Amount After Tax :</span>
-                  <span className="text-right">{roundedTotal.toFixed(2)}</span>
-                </div>
-              </div>
-              
-              <div className="signature-area text-right pt-4" style={{ marginTop: 'auto' }}>
-                <p className="mb-8 text-xs font-bold">for : Jain Advertising Agency</p>
-                <p className="text-xs">Proprietor.</p>
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        );
+      })}
+
       {toastMessage && (
         <div className="toast-notification">{toastMessage}</div>
       )}

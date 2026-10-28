@@ -43,14 +43,23 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Extract version
+        id: get_version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         with:
-          tag_name: v1.0.1
-          name: Billing App v1.0.1
+          tag_name: ${{ steps.get_version.outputs.tag }}
+          name: Billing App ${{ steps.get_version.outputs.tag }}
           draft: false
           prerelease: false
+          generate_release_notes: true
           files: |
             dist-electron/*.exe
         env:

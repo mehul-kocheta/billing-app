@@ -181,6 +181,24 @@ input[type="number"] {
   display: flex;
   flex-direction: column;
   min-height: calc(297mm - var(--top-margin, 0cm));
+  margin-bottom: 28px;
+  box-sizing: border-box;
+}
+
+.page-sheet-badge {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  letter-spacing: 0.025em;
+  user-select: none;
 }
 
 .invoice-header {
@@ -292,7 +310,6 @@ input[type="number"] {
   width: 100%;
   border-collapse: collapse;
   border: none;
-  border-bottom: 1.5px solid var(--border-color);
   table-layout: fixed;
   flex-grow: 1;
   height: 100%;
@@ -325,6 +342,18 @@ input[type="number"] {
 
 .transportation-row td {
   border-top: none;
+}
+
+.continuation-row td {
+  border-top: none;
+  padding: 4px 6px;
+  vertical-align: top;
+}
+
+.subtotal-row td {
+  border-top: 1.5px solid var(--border-color);
+  padding: 4px 6px;
+  vertical-align: middle;
 }
 
 .empty-filler td {
@@ -454,40 +483,103 @@ input[type="number"] {
 
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
   body {
     background-color: white;
     font-size: 11px;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   .app-container {
-    padding: 0;
-    max-width: none;
+    padding: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
   }
   .invoice-paper {
-    box-shadow: none;
-    border: none;
-    padding: 0;
-    min-height: calc(99vh - var(--top-margin, 0cm));
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 10mm 8mm 10mm !important;
+    margin: 0 auto !important;
+    margin-top: var(--top-margin, 0cm) !important;
+    height: calc(100vh - var(--top-margin, 0cm)) !important;
+    min-height: calc(100vh - var(--top-margin, 0cm)) !important;
+    max-height: calc(100vh - var(--top-margin, 0cm)) !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
     display: flex !important;
     flex-direction: column !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+  .invoice-paper:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
   .bill-frame {
     border: 1.5px solid #000000 !important;
     width: 100% !important;
+    margin: 0 auto !important;
     box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
     flex-grow: 1 !important;
+    height: 100% !important;
+    -webkit-box-decoration-break: clone !important;
+    box-decoration-break: clone !important;
+  }
+  .invoice-meta-row {
+    border-bottom: none !important;
   }
   .invoice-table {
     flex-grow: 1 !important;
+    height: auto !important;
+    border-bottom: none !important;
+  }
+  .invoice-table thead {
+    display: table-header-group !important;
+  }
+  .invoice-table th {
+    border-top: 1.5px solid #000000 !important;
+  }
+  .invoice-table tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .empty-filler {
+    display: table-row !important;
+  }
+  .empty-filler td {
     height: 100% !important;
   }
+  .subtotal-row td {
+    border-top: 1.5px solid #000000 !important;
+  }
   .invoice-footer {
+    border-top: 1.5px solid #000000 !important;
     margin-top: auto !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    box-sizing: border-box !important;
+    padding-bottom: 6px !important;
+  }
+  .footer-left,
+  .footer-right,
+  .signature-area {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    box-sizing: border-box !important;
+  }
+  .signature-area p.mb-8 {
+    margin-bottom: 20px !important;
   }
   .invoice-table th:nth-last-child(2),
   .invoice-table td:nth-last-child(2) {
-    border-right: none;
+    border-right: none !important;
   }
   .no-print {
     display: none !important;

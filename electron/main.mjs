@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -175,16 +175,66 @@ ipcMain.handle('write-config', async (event, data) => {
   }
 });
 
-ipcMain.handle('print-to-pdf', async (event) => {
-    const win = BrowserWindow.getFocusedWindow();
-    if (!win) return { success: false, error: 'No focused window' };
+async function handleSavePdf(event, defaultName) {
+  const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+  if (!win) return { success: false, error: 'No active window found' };
 
-    try {
-        win.webContents.print({ printBackground: true });
-        return { success: true };
-    } catch(err) {
-        return { success: false, error: err.message };
+  try {
+    const sanitizedName = (defaultName || 'Invoice')
+      .replace(/[/\\?%*:|"<>]/g, '_')
+      .trim();
+    const filename = `${sanitizedName || 'Invoice'}.pdf`;
+
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: 'Save Invoice as PDF',
+      defaultPath: path.join(app.getPath('documents'), filename),
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+    });
+
+    if (canceled || !filePath) {
+      return { success: false, canceled: true };
     }
+
+    const pdfData = await win.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4'
+    });
+
+    await fs.promises.writeFile(filePath, pdfData);
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('Failed to save PDF:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+ipcMain.handle('save-pdf', async (event, defaultName) => {
+  return await handleSavePdf(event, defaultName);
+});
+
+ipcMain.handle('print-to-pdf', async (event, defaultName) => {
+  return await handleSavePdf(event, defaultName);
+});
+
+ipcMain.handle('print-document', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
+  if (!win) return { success: false, error: 'No active window found' };
+
+  try {
+    const printers = await win.webContents.getPrintersAsync();
+    if (!printers || printers.length === 0) {
+      return {
+        success: false,
+        error: 'No printers detected on your system. Please use "Save as PDF" instead.'
+      };
+    }
+
+    await win.webContents.print({ printBackground: true });
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to print document:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('get-history-page', async (event, { query, page, limit }) => {

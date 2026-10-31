@@ -848,6 +848,68 @@ function App() {
   const roundedTotal = isRoundOff ? Math.round(totalAfterTax) : totalAfterTax;
   const roundOff = isRoundOff ? roundedTotal - totalAfterTax : 0;
 
+  // Cached canvas context for accurate text width and line wrap estimation matching print column width (~275px)
+  const getEstimatedLineCount = (text, maxWidth = 275) => {
+    if (!text) return 1;
+    const paragraphs = text.split('\n');
+
+    if (typeof document === 'undefined') {
+      let lines = 0;
+      for (const para of paragraphs) {
+        lines += Math.max(1, Math.ceil(para.length / 55));
+      }
+      return Math.max(1, lines);
+    }
+
+    if (!window._printMeasureCtx) {
+      const canvas = document.createElement('canvas');
+      window._printMeasureCtx = canvas.getContext('2d');
+    }
+
+    const ctx = window._printMeasureCtx;
+    if (ctx) {
+      ctx.font = '11px Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    } else {
+      let lines = 0;
+      for (const para of paragraphs) {
+        lines += Math.max(1, Math.ceil(para.length / 55));
+      }
+      return Math.max(1, lines);
+    }
+
+    let totalLines = 0;
+    for (const para of paragraphs) {
+      const trimmed = para.trim();
+      if (!trimmed) {
+        totalLines += 1;
+        continue;
+      }
+      const words = trimmed.split(/\s+/);
+      let currentLine = '';
+      let paraLines = 1;
+
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+          paraLines++;
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+
+        const wordMetrics = ctx.measureText(currentLine);
+        if (wordMetrics.width > maxWidth) {
+          const extra = Math.floor(wordMetrics.width / maxWidth);
+          paraLines += extra;
+        }
+      }
+      totalLines += paraLines;
+    }
+
+    return Math.max(1, totalLines);
+  };
+
   const pages = useMemo(() => {
     const topMarginCm = parseFloat(config.topMargin) || 0;
     const topMarginPx = topMarginCm * 37.8;
@@ -862,15 +924,20 @@ function App() {
     const subCapacity = Math.max(250, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
-      if (item.type === 'title') return 25;
-      const text = (item.name || '').replace(/<[^>]+>/g, '').trim();
-      const lineCount = Math.max(1, text.split('\n').length, Math.ceil(text.length / 34));
+      const rawText = (item.name || '')
+        .replace(/<br\s*[\/]?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+      const lineCount = getEstimatedLineCount(rawText, 275);
       return 25 + (lineCount - 1) * 16;
     };
 
     const getTransH = (t) => {
-      const text = (t.description || '').replace(/<[^>]+>/g, '').trim();
-      const lineCount = Math.max(1, text.split('\n').length, Math.ceil(text.length / 34));
+      const rawText = (t.description || '')
+        .replace(/<br\s*[\/]?>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+      const lineCount = getEstimatedLineCount(rawText, 275);
       return 25 + (lineCount - 1) * 16;
     };
 

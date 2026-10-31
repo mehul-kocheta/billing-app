@@ -1,7 +1,7 @@
 {
   "name": "billing-app",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Billing App",
   "author": "Mehul",
   "type": "module",

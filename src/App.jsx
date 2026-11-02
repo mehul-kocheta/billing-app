@@ -41,7 +41,7 @@ const RichTextEditor = ({ value, onChange, style, ...props }) => {
       onInput={handleInput}
       onKeyDown={handleKeyDown}
       style={{
-        minHeight: '24px',
+        minHeight: '18px',
         outline: 'none',
         whiteSpace: 'pre-wrap',
         cursor: 'text',
@@ -927,12 +927,12 @@ function App() {
     const extraDocTypeH = invoiceData.documentType === 'credit-note' ? 18 : 0;
     const dynamicMetaExtraH = extraAddrH + extraNameH + extraDocTypeH;
 
-    // Page 1 fixed non-row height: doc-type-label (~28) + dynamic invoice-meta-row (~135 + extra) + thead (~28) + subtotal-row (~26) + footer & terms (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 442px + dynamicMetaExtraH
-    const p1NonItemH = topMarginPx + 442 + dynamicMetaExtraH;
+    // Page 1 compact non-row height: doc-type-label (~22) + dynamic invoice-meta-row (~110 + extra) + thead (~22) + subtotal-row (~22) + compact footer & terms (~165) + paper bottom padding 5mm (~19) + safety buffer = topMarginPx + 380px + dynamicMetaExtraH
+    const p1NonItemH = topMarginPx + 380 + dynamicMetaExtraH;
     const p1Capacity = Math.max(200, pageHeightPx - p1NonItemH);
 
-    // Subsequent pages fixed non-row height
-    const subNonItemH = topMarginPx + 476 + dynamicMetaExtraH;
+    // Subsequent pages compact non-row height: p1NonItemH + continuation-row (~34) = topMarginPx + 414px + dynamicMetaExtraH
+    const subNonItemH = topMarginPx + 414 + dynamicMetaExtraH;
     const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
@@ -941,7 +941,7 @@ function App() {
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
-      return 25 + (lineCount - 1) * 16;
+      return 20 + (lineCount - 1) * 15;
     };
 
     const getTransH = (t) => {
@@ -950,7 +950,7 @@ function App() {
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
-      return 25 + (lineCount - 1) * 16;
+      return 20 + (lineCount - 1) * 15;
     };
 
     let totalH = 0;

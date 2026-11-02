@@ -601,6 +601,10 @@ input[type="number"] {
     size: A4 portrait;
     margin: 0;
   }
+  html, body, * {
+    -webkit-text-size-adjust: 100% !important;
+    text-size-adjust: 100% !important;
+  }
   body {
     background-color: white;
     font-size: 11px;
@@ -660,10 +664,23 @@ input[type="number"] {
   }
   .invoice-table th {
     border-top: 1.5px solid #000000 !important;
+    font-size: 11px !important;
+    padding: 2px 4px !important;
   }
   .invoice-table tr {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+  }
+  .item-row td {
+    font-size: 10.5px !important;
+    padding: 1px 4px !important;
+    line-height: 1.15 !important;
+  }
+  .item-row input,
+  .item-row .input-field {
+    font-size: 10.5px !important;
+    line-height: 1.15 !important;
+    height: 19px !important;
   }
   .empty-filler {
     display: table-row !important;
@@ -688,19 +705,25 @@ input[type="number"] {
   }
   .terms-conditions p {
     margin: 0 0 1px 0 !important;
-    line-height: 1.2 !important;
+    line-height: 1.25 !important;
+    font-size: 9.5px !important;
   }
   .terms-conditions input {
     padding-top: 0 !important;
     padding-bottom: 0 !important;
     margin: 0 !important;
-    line-height: 1.15 !important;
+    line-height: 1.2 !important;
+    font-size: 9.5px !important;
   }
   .signature-area {
-    padding-top: 4px !important;
+    padding-top: 2px !important;
   }
+  .signature-area p.mb-3,
   .signature-area p.mb-8 {
-    margin-bottom: 14px !important;
+    margin-bottom: 10px !important;
+  }
+  .signature-area p {
+    font-size: 11px !important;
   }
   .footer-left,
   .footer-right,
@@ -719,6 +742,13 @@ input[type="number"] {
   .input-field {
     border: none !important;
     background: transparent !important;
+  }
+  .print-only.address-print-text {
+    display: block !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
   }
   /* Remove any input styling placeholders for printing */
   input, textarea {

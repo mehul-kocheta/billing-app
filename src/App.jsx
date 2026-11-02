@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Plus, Trash2, Printer, Settings, ArrowLeft, Save, FileText, History, Search, BarChart3, Calendar, Download, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -41,7 +41,7 @@ const RichTextEditor = ({ value, onChange, style, ...props }) => {
       onInput={handleInput}
       onKeyDown={handleKeyDown}
       style={{
-        minHeight: '24px',
+        minHeight: '20px',
         outline: 'none',
         whiteSpace: 'pre-wrap',
         cursor: 'text',
@@ -434,34 +434,36 @@ function App() {
     const saved = localStorage.getItem('billing_address_height');
     return saved ? parseInt(saved, 10) : null;
   });
-  const addressTextareaRef = useRef(null);
+  const observerRef = useRef(null);
   const addressHeightRef = useRef(addressHeight);
   useEffect(() => {
     addressHeightRef.current = addressHeight;
   }, [addressHeight]);
 
-  useEffect(() => {
-    const el = addressTextareaRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-
-    let isInitial = true;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (isInitial) {
-          isInitial = false;
-          continue;
+  const setAddressTextareaRef = useCallback((node) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    if (node && typeof ResizeObserver !== 'undefined') {
+      let isInitial = true;
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (isInitial) {
+            isInitial = false;
+            continue;
+          }
+          const newH = Math.round(entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height);
+          const currentH = addressHeightRef.current;
+          if (newH > 20 && (!currentH || Math.abs(newH - currentH) > 3)) {
+            setAddressHeight(newH);
+            localStorage.setItem('billing_address_height', String(newH));
+          }
         }
-        const newH = Math.round(entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height);
-        const currentH = addressHeightRef.current;
-        if (newH > 20 && (!currentH || Math.abs(newH - currentH) > 3)) {
-          setAddressHeight(newH);
-          localStorage.setItem('billing_address_height', String(newH));
-        }
-      }
-    });
-
-    observer.observe(el);
-    return () => observer.disconnect();
+      });
+      observer.observe(node);
+      observerRef.current = observer;
+    }
   }, []);
 
   useEffect(() => {
@@ -956,8 +958,8 @@ function App() {
       const metaEl = paperRef.current.querySelector('.invoice-meta-row');
       if (metaEl) {
         const measuredH = metaEl.offsetHeight;
-        if (measuredH > 135) {
-          metaMeasuredExtraH = measuredH - 135;
+        if (measuredH > 130) {
+          metaMeasuredExtraH = measuredH - 130;
         }
       }
     }
@@ -975,21 +977,22 @@ function App() {
     const extraDocTypeH = invoiceData.documentType === 'credit-note' ? 18 : 0;
     const dynamicMetaExtraH = Math.max(metaMeasuredExtraH, extraAddrH + extraNameH + extraDocTypeH);
 
-    // Page 1 fixed non-row height: doc-type-label (~28) + dynamic invoice-meta-row (~135 + extra) + thead (~28) + subtotal-row (~26) + footer & terms (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 442px + dynamicMetaExtraH
-    const p1NonItemH = topMarginPx + 442 + dynamicMetaExtraH;
+    // Page 1 compact non-row height: doc-type-label (~29) + dynamic invoice-meta-row (~130 + extra) + thead (~24) + subtotal-row (~23) + compact footer & terms (~182) + paper bottom padding 8mm (~30) + safety buffer (~15) = topMarginPx + 433px + dynamicMetaExtraH
+    const p1NonItemH = topMarginPx + 433 + dynamicMetaExtraH;
     const p1Capacity = Math.max(200, pageHeightPx - p1NonItemH);
 
-    // Subsequent pages fixed non-row height
-    const subNonItemH = topMarginPx + 476 + dynamicMetaExtraH;
+    // Subsequent pages compact non-row height: p1NonItemH + continuation-row (~34) = topMarginPx + 467px + dynamicMetaExtraH
+    const subNonItemH = topMarginPx + 467 + dynamicMetaExtraH;
     const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
+      if (item.type === 'title') return 24;
       const rawText = (item.name || '')
         .replace(/<br\s*[\/]?>/gi, '\n')
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
-      return 25 + (lineCount - 1) * 16;
+      return 24 + (lineCount - 1) * 16;
     };
 
     const getTransH = (t) => {
@@ -998,7 +1001,7 @@ function App() {
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
-      return 25 + (lineCount - 1) * 16;
+      return 24 + (lineCount - 1) * 16;
     };
 
     let totalH = 0;
@@ -1921,7 +1924,7 @@ function App() {
                   <div className="grid-row">
                     <label>Address</label><span>:</span>
                     <textarea 
-                      ref={pageObj.pageIndex === 0 ? addressTextareaRef : null}
+                      ref={pageObj.pageIndex === 0 ? setAddressTextareaRef : null}
                       className="input-field" 
                       style={addressHeight ? { height: `${addressHeight}px` } : undefined}
                       value={invoiceData.billToAddress} 

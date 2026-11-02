@@ -504,9 +504,9 @@ input[type="number"] {
     padding: 0 10mm 8mm 10mm !important;
     margin: 0 auto !important;
     margin-top: var(--top-margin, 0cm) !important;
-    height: calc(100vh - var(--top-margin, 0cm)) !important;
-    min-height: calc(100vh - var(--top-margin, 0cm)) !important;
-    max-height: calc(100vh - var(--top-margin, 0cm)) !important;
+    height: calc(297mm - var(--top-margin, 0cm)) !important;
+    min-height: calc(297mm - var(--top-margin, 0cm)) !important;
+    max-height: calc(297mm - var(--top-margin, 0cm)) !important;
     page-break-after: always !important;
     break-after: page !important;
     page-break-inside: avoid !important;

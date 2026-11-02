@@ -195,12 +195,24 @@ async function handleSavePdf(event, defaultName) {
       return { success: false, canceled: true };
     }
 
-    const pdfData = await win.webContents.printToPDF({
-      printBackground: true,
-      pageSize: 'A4',
-      preferCSSPageSize: true,
-      margins: { marginType: 'none' }
-    });
+    const currentZoom = win.webContents.getZoomFactor();
+    let pdfData;
+    try {
+      if (currentZoom !== 1.0) {
+        win.webContents.setZoomFactor(1.0);
+      }
+      pdfData = await win.webContents.printToPDF({
+        printBackground: true,
+        pageSize: 'A4',
+        preferCSSPageSize: true,
+        margins: { marginType: 'none' },
+        scale: 1.0
+      });
+    } finally {
+      if (currentZoom !== 1.0) {
+        win.webContents.setZoomFactor(currentZoom);
+      }
+    }
 
     await fs.promises.writeFile(filePath, pdfData);
     return { success: true, filePath };

@@ -986,12 +986,14 @@ function App() {
     const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
-      if (item.type === 'title') return 21;
       const rawText = (item.name || '')
         .replace(/<br\s*[\/]?>/gi, '\n')
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
+      if (item.type === 'title') {
+        return 21 + (lineCount - 1) * 16;
+      }
       return 21 + (lineCount - 1) * 15;
     };
 
@@ -1925,11 +1927,24 @@ function App() {
                     <label>Address</label><span>:</span>
                     <textarea 
                       ref={pageObj.pageIndex === 0 ? setAddressTextareaRef : null}
-                      className="input-field" 
+                      className="input-field no-print" 
                       style={addressHeight ? { height: `${addressHeight}px` } : undefined}
                       value={invoiceData.billToAddress} 
                       onChange={e => handleInvoiceChange('billToAddress', e.target.value)} 
                     />
+                    <div 
+                      className="print-only whitespace-pre-wrap address-print-text"
+                      style={{
+                        minHeight: addressHeight ? `${addressHeight}px` : undefined,
+                        lineHeight: '1.25',
+                        wordBreak: 'break-word',
+                        width: '100%',
+                        fontSize: '11px',
+                        padding: '2px 0'
+                      }}
+                    >
+                      {invoiceData.billToAddress}
+                    </div>
                   </div>
                   <div className="grid-row">
                     <label>Pin Code</label><span>:</span>
@@ -2037,15 +2052,15 @@ function App() {
               <table className="invoice-table">
                 <thead>
                   <tr>
-                    <th style={{width: '4%'}}>Sr.No.</th>
-                    <th style={{width: '32%'}}>Name of Product / Service</th>
+                    <th style={{width: '5%'}}>Sr.No.</th>
+                    <th style={{width: '34%'}}>Name of Product / Service</th>
                     <th style={{width: '8%'}}>HSN SAC</th>
-                    <th style={{width: '7%'}}>Size</th>
-                    <th style={{width: '7%'}}>TTL.Sq.Ft.</th>
+                    <th style={{width: '8.5%'}}>Size</th>
+                    <th style={{width: '7.5%'}}>TTL.Sq.Ft.</th>
                     <th style={{width: '5%'}}>Qty</th>
                     <th style={{width: '7%'}}>Rate</th>
-                    <th style={{width: '11%'}}>Total</th>
-                    <th className="no-print" style={{width: '19%', minWidth: '155px'}}></th>
+                    <th style={{width: '10%'}}>Total</th>
+                    <th className="no-print" style={{width: '15%', minWidth: '155px'}}></th>
                   </tr>
                 </thead>
                 <tbody>

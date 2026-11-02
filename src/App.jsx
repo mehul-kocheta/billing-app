@@ -915,13 +915,13 @@ function App() {
     const topMarginPx = topMarginCm * 37.8;
     const pageHeightPx = 1122.5; // A4 height at 96 DPI
 
-    // Page 1 fixed non-row height: doc-type-label (~28) + invoice-meta-row (~132) + thead (~28) + subtotal-row (~26) + footer (~176) = topMarginPx + 390px
-    const p1NonItemH = topMarginPx + 390;
-    const p1Capacity = Math.max(250, pageHeightPx - p1NonItemH);
+    // Page 1 fixed non-row height: doc-type-label (~28) + invoice-meta-row (~135) + thead (~28) + subtotal-row (~26) + footer & terms (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 442px
+    const p1NonItemH = topMarginPx + 442;
+    const p1Capacity = Math.max(200, pageHeightPx - p1NonItemH);
 
-    // Subsequent pages fixed non-row height: doc-type-label (~28) + invoice-meta-row (~132) + thead (~28) + continuation-row (~34) + subtotal-row (~26) + footer (~176) = topMarginPx + 424px
-    const subNonItemH = topMarginPx + 424;
-    const subCapacity = Math.max(250, pageHeightPx - subNonItemH);
+    // Subsequent pages fixed non-row height: doc-type-label (~28) + invoice-meta-row (~135) + thead (~28) + continuation-row (~34) + subtotal-row (~26) + footer (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 476px
+    const subNonItemH = topMarginPx + 476;
+    const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
       const rawText = (item.name || '')

@@ -435,15 +435,25 @@ function App() {
     return saved ? parseInt(saved, 10) : null;
   });
   const addressTextareaRef = useRef(null);
+  const addressHeightRef = useRef(addressHeight);
+  useEffect(() => {
+    addressHeightRef.current = addressHeight;
+  }, [addressHeight]);
 
   useEffect(() => {
     const el = addressTextareaRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
 
+    let isInitial = true;
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
+        if (isInitial) {
+          isInitial = false;
+          continue;
+        }
         const newH = Math.round(entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height);
-        if (newH > 20 && (!addressHeight || Math.abs(newH - addressHeight) > 3)) {
+        const currentH = addressHeightRef.current;
+        if (newH > 20 && (!currentH || Math.abs(newH - currentH) > 3)) {
           setAddressHeight(newH);
           localStorage.setItem('billing_address_height', String(newH));
         }
@@ -452,7 +462,7 @@ function App() {
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [addressHeight]);
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -1869,7 +1879,7 @@ function App() {
         </div>
       </div>
 
-      {pages.map((pageObj) => {
+      {pages.map((pageObj, pageIndex) => {
         let srNo = pageObj.startSrNo;
         return (
           <div 
@@ -1911,7 +1921,7 @@ function App() {
                   <div className="grid-row">
                     <label>Address</label><span>:</span>
                     <textarea 
-                      ref={pageIndex === 0 ? addressTextareaRef : null}
+                      ref={pageObj.pageIndex === 0 ? addressTextareaRef : null}
                       className="input-field" 
                       style={addressHeight ? { height: `${addressHeight}px` } : undefined}
                       value={invoiceData.billToAddress} 

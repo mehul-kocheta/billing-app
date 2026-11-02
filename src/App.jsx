@@ -41,7 +41,7 @@ const RichTextEditor = ({ value, onChange, style, ...props }) => {
       onInput={handleInput}
       onKeyDown={handleKeyDown}
       style={{
-        minHeight: '20px',
+        minHeight: '18px',
         outline: 'none',
         whiteSpace: 'pre-wrap',
         cursor: 'text',
@@ -977,22 +977,22 @@ function App() {
     const extraDocTypeH = invoiceData.documentType === 'credit-note' ? 18 : 0;
     const dynamicMetaExtraH = Math.max(metaMeasuredExtraH, extraAddrH + extraNameH + extraDocTypeH);
 
-    // Page 1 compact non-row height: doc-type-label (~29) + dynamic invoice-meta-row (~130 + extra) + thead (~24) + subtotal-row (~23) + compact footer & terms (~182) + paper bottom padding 8mm (~30) + safety buffer (~15) = topMarginPx + 433px + dynamicMetaExtraH
-    const p1NonItemH = topMarginPx + 433 + dynamicMetaExtraH;
+    // Page 1 compact non-row height: doc-type-label (~29) + dynamic invoice-meta-row (~130 + extra) + thead (~22) + subtotal-row (~21) + compact footer & terms (~182) + paper bottom padding 8mm (~30) + safety buffer (~16) = topMarginPx + 430px + dynamicMetaExtraH
+    const p1NonItemH = topMarginPx + 430 + dynamicMetaExtraH;
     const p1Capacity = Math.max(200, pageHeightPx - p1NonItemH);
 
-    // Subsequent pages compact non-row height: p1NonItemH + continuation-row (~34) = topMarginPx + 467px + dynamicMetaExtraH
-    const subNonItemH = topMarginPx + 467 + dynamicMetaExtraH;
+    // Subsequent pages compact non-row height: p1NonItemH + continuation-row (~34) = topMarginPx + 464px + dynamicMetaExtraH
+    const subNonItemH = topMarginPx + 464 + dynamicMetaExtraH;
     const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
-      if (item.type === 'title') return 24;
+      if (item.type === 'title') return 21;
       const rawText = (item.name || '')
         .replace(/<br\s*[\/]?>/gi, '\n')
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
-      return 24 + (lineCount - 1) * 16;
+      return 21 + (lineCount - 1) * 15;
     };
 
     const getTransH = (t) => {
@@ -1001,7 +1001,7 @@ function App() {
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
-      return 24 + (lineCount - 1) * 16;
+      return 21 + (lineCount - 1) * 15;
     };
 
     let totalH = 0;
@@ -2091,7 +2091,7 @@ function App() {
                           <td></td>
                           <td className="no-print text-center">
                             <div className="flex items-center justify-end" style={{paddingRight: '6px'}}>
-                              <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                              <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row" style={{padding: '1px 2px', height: '18px'}}><Trash2 size={13} /></button>
                             </div>
                           </td>
                         </tr>
@@ -2135,7 +2135,7 @@ function App() {
                               value={item.calcMode || 'sqft_rate'}
                               onChange={e => handleItemChange(item.id, 'calcMode', e.target.value)}
                               className="input-field text-xs py-0 px-1 border rounded"
-                              style={{width: '74px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
+                              style={{width: '74px', fontSize: '9px', height: '18px', backgroundColor: '#f9fafb'}}
                               title="Calculation Mode"
                             >
                               <option value="sqft_rate">SqFt×Rate</option>
@@ -2147,7 +2147,7 @@ function App() {
                               value={item.gstRate !== undefined ? item.gstRate : 18}
                               onChange={e => handleItemChange(item.id, 'gstRate', Number(e.target.value))}
                               className="input-field text-xs py-0 px-1 border rounded"
-                              style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}}
+                              style={{width: '46px', fontSize: '9px', height: '18px', backgroundColor: '#f9fafb'}}
                               title="GST Rate %"
                             >
                               <option value={0}>0%</option>
@@ -2156,7 +2156,7 @@ function App() {
                               <option value={18}>18%</option>
                               <option value={28}>28%</option>
                             </select>
-                            <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                            <button onClick={() => removeItem(item.id)} className="icon-btn text-red" title="Delete Row" style={{padding: '1px 2px', height: '18px'}}><Trash2 size={13} /></button>
                           </div>
                         </td>
                       </tr>
@@ -2216,7 +2216,7 @@ function App() {
                               value={t.gstRate !== undefined ? t.gstRate : 18} 
                               onChange={e => handleTransportChange(t.id, 'gstRate', Number(e.target.value))} 
                               className="input-field text-xs py-0 px-1 border rounded" 
-                              style={{width: '46px', fontSize: '10px', height: '22px', backgroundColor: '#f9fafb'}} 
+                              style={{width: '46px', fontSize: '9px', height: '18px', backgroundColor: '#f9fafb'}} 
                               title="GST Rate %"
                             >
                               <option value={0}>0%</option>
@@ -2226,7 +2226,7 @@ function App() {
                               <option value={28}>28%</option>
                             </select>
                           )}
-                          <button onClick={() => removeTransport(t.id)} className="icon-btn text-red" title="Delete Row"><Trash2 size={16} /></button>
+                          <button onClick={() => removeTransport(t.id)} className="icon-btn text-red" title="Delete Row" style={{padding: '1px 2px', height: '18px'}}><Trash2 size={13} /></button>
                         </div>
                       </td>
                     </tr>

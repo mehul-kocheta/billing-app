@@ -986,12 +986,14 @@ function App() {
     const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
-      if (item.type === 'title') return 21;
       const rawText = (item.name || '')
         .replace(/<br\s*[\/]?>/gi, '\n')
         .replace(/<[^>]+>/g, '')
         .trim();
       const lineCount = getEstimatedLineCount(rawText, 275);
+      if (item.type === 'title') {
+        return 21 + (lineCount - 1) * 16;
+      }
       return 21 + (lineCount - 1) * 15;
     };
 

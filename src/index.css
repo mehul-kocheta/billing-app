@@ -131,6 +131,7 @@ body {
 
 textarea.input-field {
   resize: vertical;
+  transition: none !important;
 }
 
 /* Remove number input spinners */
@@ -319,7 +320,7 @@ input[type="number"] {
   border: none;
   border-bottom: 1.5px solid var(--border-color);
   border-right: 1.5px solid var(--border-color);
-  padding: 4px;
+  padding: 3px 4px;
   background-color: transparent;
   font-weight: 600;
   text-align: center;
@@ -397,16 +398,25 @@ input[type="number"] {
 }
 
 .item-row td {
-  padding-top: 0px !important;
-  padding-bottom: 0px !important;
+  padding: 2px 4px !important;
+  line-height: 1.2 !important;
+  vertical-align: middle;
 }
 
 .item-row .input-field,
+.item-row input,
 .item-row textarea {
-  padding-top: 0px !important;
-  padding-bottom: 0px !important;
+  padding: 2px 4px !important;
   margin: 0px !important;
   line-height: 1.2 !important;
+}
+
+.title-row td {
+  padding: 2px 4px !important;
+}
+
+.subtotal-row td {
+  padding: 3px 4px !important;
 }
 
 /* Utilities */
@@ -568,14 +578,31 @@ input[type="number"] {
     padding-bottom: 6px !important;
   }
   .footer-left,
+  .footer-right {
+    padding: 3px 8px !important;
+  }
+  .terms-conditions p {
+    margin: 0 0 1px 0 !important;
+    line-height: 1.2 !important;
+  }
+  .terms-conditions input {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin: 0 !important;
+    line-height: 1.15 !important;
+  }
+  .signature-area {
+    padding-top: 4px !important;
+  }
+  .signature-area p.mb-8 {
+    margin-bottom: 14px !important;
+  }
+  .footer-left,
   .footer-right,
   .signature-area {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
     box-sizing: border-box !important;
-  }
-  .signature-area p.mb-8 {
-    margin-bottom: 20px !important;
   }
   .invoice-table th:nth-last-child(2),
   .invoice-table td:nth-last-child(2) {

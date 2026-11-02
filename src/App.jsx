@@ -915,12 +915,24 @@ function App() {
     const topMarginPx = topMarginCm * 37.8;
     const pageHeightPx = 1122.5; // A4 height at 96 DPI
 
-    // Page 1 fixed non-row height: doc-type-label (~28) + invoice-meta-row (~135) + thead (~28) + subtotal-row (~26) + footer & terms (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 442px
-    const p1NonItemH = topMarginPx + 442;
+    // Dynamically calculate extra height of invoice-meta-row if address or party name wrap
+    const rawAddr = (invoiceData.billToAddress || '').trim();
+    const addrLines = rawAddr ? getEstimatedLineCount(rawAddr, 255) : 1;
+    const extraAddrH = Math.max(0, addrLines - 1) * 16;
+
+    const rawName = (invoiceData.billToName || '').trim();
+    const nameLines = rawName ? getEstimatedLineCount(rawName, 255) : 1;
+    const extraNameH = Math.max(0, nameLines - 1) * 16;
+
+    const extraDocTypeH = invoiceData.documentType === 'credit-note' ? 18 : 0;
+    const dynamicMetaExtraH = extraAddrH + extraNameH + extraDocTypeH;
+
+    // Page 1 fixed non-row height: doc-type-label (~28) + dynamic invoice-meta-row (~135 + extra) + thead (~28) + subtotal-row (~26) + footer & terms (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 442px + dynamicMetaExtraH
+    const p1NonItemH = topMarginPx + 442 + dynamicMetaExtraH;
     const p1Capacity = Math.max(200, pageHeightPx - p1NonItemH);
 
-    // Subsequent pages fixed non-row height: doc-type-label (~28) + invoice-meta-row (~135) + thead (~28) + continuation-row (~34) + subtotal-row (~26) + footer (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 476px
-    const subNonItemH = topMarginPx + 476;
+    // Subsequent pages fixed non-row height
+    const subNonItemH = topMarginPx + 476 + dynamicMetaExtraH;
     const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
@@ -1056,7 +1068,15 @@ function App() {
     resultPages[resultPages.length - 1].pageSubtotal = taxableValue;
 
     return resultPages;
-  }, [items, transportation, config.topMargin, taxableValue]);
+  }, [
+    items, 
+    transportation, 
+    config.topMargin, 
+    taxableValue, 
+    invoiceData.billToAddress, 
+    invoiceData.billToName, 
+    invoiceData.documentType
+  ]);
 
   const saveToHistory = async () => {
     const invoiceKey = invoiceData.invoiceNo?.trim();
@@ -1846,7 +1866,12 @@ function App() {
                   </div>
                   <div className="grid-row">
                     <label>Address</label><span>:</span>
-                    <textarea className="input-field" value={invoiceData.billToAddress} onChange={e => handleInvoiceChange('billToAddress', e.target.value)} />
+                    <textarea 
+                      className="input-field" 
+                      rows={Math.max(1, (invoiceData.billToAddress || '').split('\n').length)}
+                      value={invoiceData.billToAddress} 
+                      onChange={e => handleInvoiceChange('billToAddress', e.target.value)} 
+                    />
                   </div>
                   <div className="grid-row">
                     <label>Pin Code</label><span>:</span>

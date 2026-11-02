@@ -595,6 +595,10 @@ input[type="number"] {
     appearance: none;
     resize: none !important;
   }
+  .bill-to textarea {
+    height: auto !important;
+    overflow: visible !important;
+  }
   input::placeholder, textarea::placeholder {
     color: transparent !important;
   }

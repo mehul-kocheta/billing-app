@@ -977,12 +977,12 @@ function App() {
     const extraDocTypeH = invoiceData.documentType === 'credit-note' ? 18 : 0;
     const dynamicMetaExtraH = Math.max(metaMeasuredExtraH, extraAddrH + extraNameH + extraDocTypeH);
 
-    // Page 1 compact non-row height: doc-type-label (~29) + dynamic invoice-meta-row (~130 + extra) + thead (~22) + subtotal-row (~21) + compact footer & terms (~182) + paper bottom padding 8mm (~30) + safety buffer (~16) = topMarginPx + 430px + dynamicMetaExtraH
-    const p1NonItemH = topMarginPx + 430 + dynamicMetaExtraH;
+    // Page 1 compact non-row height: doc-type-label (~29) + dynamic invoice-meta-row (~130 + extra) + thead (~22) + subtotal-row (~21) + compact footer & terms (~170) + paper bottom padding 8mm (~30) + safety buffer (~20) = topMarginPx + 422px + dynamicMetaExtraH
+    const p1NonItemH = topMarginPx + 422 + dynamicMetaExtraH;
     const p1Capacity = Math.max(200, pageHeightPx - p1NonItemH);
 
-    // Subsequent pages compact non-row height: p1NonItemH + continuation-row (~34) = topMarginPx + 464px + dynamicMetaExtraH
-    const subNonItemH = topMarginPx + 464 + dynamicMetaExtraH;
+    // Subsequent pages compact non-row height: p1NonItemH + continuation-row (~34) = topMarginPx + 456px + dynamicMetaExtraH
+    const subNonItemH = topMarginPx + 456 + dynamicMetaExtraH;
     const subCapacity = Math.max(200, pageHeightPx - subNonItemH);
 
     const getItemH = (item) => {
@@ -2400,8 +2400,8 @@ function App() {
                     </div>
                   )}
                   
-                  <div className="signature-area text-right pt-4" style={{ marginTop: 'auto' }}>
-                    <p className="mb-8 text-xs font-bold">for : Jain Advertising Agency</p>
+                  <div className="signature-area text-right pt-1" style={{ marginTop: 'auto' }}>
+                    <p className="mb-3 text-xs font-bold">for : {config.companyName || 'Jain Advertising Agency'}</p>
                     <p className="text-xs">Proprietor.</p>
                   </div>
                 </div>

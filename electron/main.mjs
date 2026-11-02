@@ -197,7 +197,9 @@ async function handleSavePdf(event, defaultName) {
 
     const pdfData = await win.webContents.printToPDF({
       printBackground: true,
-      pageSize: 'A4'
+      pageSize: 'A4',
+      preferCSSPageSize: true,
+      margins: { marginType: 'none' }
     });
 
     await fs.promises.writeFile(filePath, pdfData);

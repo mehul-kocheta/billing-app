@@ -430,6 +430,29 @@ function App() {
   ]);
 
   const paperRef = useRef(null);
+  const [addressHeight, setAddressHeight] = useState(() => {
+    const saved = localStorage.getItem('billing_address_height');
+    return saved ? parseInt(saved, 10) : null;
+  });
+  const addressTextareaRef = useRef(null);
+
+  useEffect(() => {
+    const el = addressTextareaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const newH = Math.round(entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height);
+        if (newH > 20 && (!addressHeight || Math.abs(newH - addressHeight) > 3)) {
+          setAddressHeight(newH);
+          localStorage.setItem('billing_address_height', String(newH));
+        }
+      }
+    });
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [addressHeight]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -771,6 +794,8 @@ function App() {
     });
     setItems([{ id: uuidv4(), type: 'item', name: '', hsn: '', size: '', sqft: '', qty: 1, rate: '', calcMode: 'sqft_rate', total: '0.00', gstRate: 18 }]);
     setTransportation([]);
+    setAddressHeight(null);
+    localStorage.removeItem('billing_address_height');
   };
 
   // Calculations
@@ -915,17 +940,30 @@ function App() {
     const topMarginPx = topMarginCm * 37.8;
     const pageHeightPx = 1122.5; // A4 height at 96 DPI
 
-    // Dynamically calculate extra height of invoice-meta-row if address or party name wrap
+    // Dynamically calculate extra height of invoice-meta-row if address or party name wrap, or if user resized address box
+    let metaMeasuredExtraH = 0;
+    if (typeof document !== 'undefined' && paperRef.current) {
+      const metaEl = paperRef.current.querySelector('.invoice-meta-row');
+      if (metaEl) {
+        const measuredH = metaEl.offsetHeight;
+        if (measuredH > 135) {
+          metaMeasuredExtraH = measuredH - 135;
+        }
+      }
+    }
+
     const rawAddr = (invoiceData.billToAddress || '').trim();
     const addrLines = rawAddr ? getEstimatedLineCount(rawAddr, 255) : 1;
-    const extraAddrH = Math.max(0, addrLines - 1) * 16;
+    const textAddrExtraH = Math.max(0, addrLines - 1) * 16;
+    const manualAddrExtraH = addressHeight ? Math.max(0, addressHeight - 38) : 0;
+    const extraAddrH = Math.max(textAddrExtraH, manualAddrExtraH);
 
     const rawName = (invoiceData.billToName || '').trim();
     const nameLines = rawName ? getEstimatedLineCount(rawName, 255) : 1;
     const extraNameH = Math.max(0, nameLines - 1) * 16;
 
     const extraDocTypeH = invoiceData.documentType === 'credit-note' ? 18 : 0;
-    const dynamicMetaExtraH = extraAddrH + extraNameH + extraDocTypeH;
+    const dynamicMetaExtraH = Math.max(metaMeasuredExtraH, extraAddrH + extraNameH + extraDocTypeH);
 
     // Page 1 fixed non-row height: doc-type-label (~28) + dynamic invoice-meta-row (~135 + extra) + thead (~28) + subtotal-row (~26) + footer & terms (~195) + paper bottom padding (~30) + safety buffer = topMarginPx + 442px + dynamicMetaExtraH
     const p1NonItemH = topMarginPx + 442 + dynamicMetaExtraH;
@@ -1075,7 +1113,8 @@ function App() {
     taxableValue, 
     invoiceData.billToAddress, 
     invoiceData.billToName, 
-    invoiceData.documentType
+    invoiceData.documentType,
+    addressHeight
   ]);
 
   const saveToHistory = async () => {
@@ -1093,7 +1132,7 @@ function App() {
       id: idToSave,
       timestamp: Date.now(),
       totalAmount: roundedTotal,
-      invoiceData,
+      invoiceData: { ...invoiceData, addressHeight },
       items,
       transportation,
       taxBreakdown: {
@@ -1168,6 +1207,11 @@ function App() {
       referenceInvoiceNo: '',
       ...cloned.invoiceData
     });
+    if (cloned.invoiceData?.addressHeight) {
+      setAddressHeight(cloned.invoiceData.addressHeight);
+    } else {
+      setAddressHeight(null);
+    }
     setItems((cloned.items || []).map(item => {
       const fallbackTotal = (item.sqft > 0 ? item.sqft * (Number(item.rate) || 0) : (item.qty || 0) * (Number(item.rate) || 0)) || 0;
       return {
@@ -1867,8 +1911,9 @@ function App() {
                   <div className="grid-row">
                     <label>Address</label><span>:</span>
                     <textarea 
+                      ref={pageIndex === 0 ? addressTextareaRef : null}
                       className="input-field" 
-                      rows={Math.max(1, (invoiceData.billToAddress || '').split('\n').length)}
+                      style={addressHeight ? { height: `${addressHeight}px` } : undefined}
                       value={invoiceData.billToAddress} 
                       onChange={e => handleInvoiceChange('billToAddress', e.target.value)} 
                     />
